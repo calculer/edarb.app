@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>دروس Darb</title>
+
+<style>
+
+body {
+    font-family: Arial, sans-serif;
+    background: #f5f7fb;
+    margin: 0;
+}
+
+header {
+    background: #2563eb;
+    color: white;
+    text-align: center;
+    padding: 25px;
+}
+
+.container {
+    max-width: 1000px;
+    margin: auto;
+    padding: 25px;
+}
+
+.lesson {
+    background: white;
+    padding: 20px;
+    margin: 15px 0;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.07);
+}
+
+.lesson h3 {
+    color: #2563eb;
+}
+
+a {
+    display: inline-block;
+    margin: 5px;
+    padding: 10px 15px;
+    border-radius: 8px;
+    text-decoration: none;
+    color: white;
+    background: #2563eb;
+}
+
+.download {
+    background: #16a34a;
+}
+
+.online {
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.back {
+    background: transparent;
+    color: #2563eb;
+}
+
+</style>
+
+</head>
+
+<body>
+
+
+<header>
+
+<h1>📚 دروس Darb</h1>
+
+<p id="subjectTitle">
+الدروس
+</p>
+
+</header>
+
+
+<div class="container">
+
+
+<div class="online">
+
+👥 المستخدمون النشطون الآن:
+
+<strong id="onlineCount">
+0
+</strong>
+
+</div>
+
+
+<a
+    class="back"
+    href="javascript:history.back()">
+
+    ← العودة
+
+</a>
+
+
+<div id="lessons">
+
+    جاري تحميل الدروس...
+
+</div>
+
+
+</div>
+
+
+<script>
+
+
+/* معرف الجهاز */
+
+let userId =
+    localStorage.getItem("darbUserId");
+
+
+if (!userId) {
+
+    userId =
+        "user-" +
+        Date.now() +
+        "-" +
+        Math.random()
+            .toString(36)
+            .substring(2);
+
+    localStorage.setItem(
+        "darbUserId",
+        userId
+    );
+
+}
+
+
+/* معرفة المادة */
+
+const params =
+    new URLSearchParams(
+        window.location.search
+    );
+
+const subject =
+    params.get("subject");
+
+
+document.getElementById(
+    "subjectTitle"
+).textContent =
+    subject
+    ? "دروس " + subject
+    : "جميع الدروس";
+
+
+/* إرسال حالة المستخدم */
+
+async function heartbeat() {
+
+    try {
+
+        await fetch(
+            "/api/online",
+            {
+
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
+
+                body: JSON.stringify({
+                    userId: userId
+                })
+
+            }
+        );
+
+    } catch (error) {}
+
+}
+
+
+heartbeat();
+
+setInterval(
+    heartbeat,
+    10000
+);
+
+
+/* عدد المستخدمين */
+
+async function updateOnline() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/online"
+            );
+
+        const data =
+            await response.json();
+
+        document.getElementById(
+            "onlineCount"
+        ).textContent =
+            data.count;
+
+    } catch (error) {}
+
+}
+
+
+updateOnline();
+
+setInterval(
+    updateOnline,
+    5000
+);
+
+
+/* تحميل الدروس */
+
+async function loadLessons() {
+
+    try {
+
+        let url =
+            "/api/lessons";
+
+        if (subject) {
+
+            url =
+                "/api/lessons/" +
+                encodeURIComponent(subject);
+
+        }
+
+
+        const response =
+            await fetch(url);
+
+
+        const lessons =
+            await response.json();
+
+
+        const container =
+            document.getElementById(
+                "lessons"
+            );
+
+
+        if (lessons.length === 0) {
+
+            container.innerHTML =
+                `
+                <div class="lesson">
+                    <h3>📭 لا توجد دروس بعد</h3>
+                    <p>
+                        لم تتم إضافة دروس لهذه المادة حتى الآن.
+                    </p>
+                </div>
+                `;
+
+            return;
+        }
+
+
+        container.innerHTML =
+            lessons.map(
+                lesson => `
+
+                <div class="lesson">
+
+                    <h3>
+                        📖 ${lesson.title}
+                    </h3>
+
+                    <p>
+                        ${lesson.description || ""}
+                    </p>
+
+                    ${
+                        lesson.file
+                        ?
+
+                        `
+                        <a
+                            href="${lesson.file}"
+                            target="_blank">
+
+                            👁️ فتح الدرس
+
+                        </a>
+
+                        <a
+                            class="download"
+                            href="${lesson.file}"
+                            download>
+
+                            ⬇️ تحميل
+
+                        </a>
+
+                        `
+
+                        :
+
+                        "<p>📭 لا يوجد ملف</p>"
+                    }
+
+                </div>
+
+                `
+            ).join("");
+
+
+    } catch (error) {
+
+        document.getElementById(
+            "lessons"
+        ).innerHTML =
+            "❌ حدث خطأ في تحميل الدروس.";
+
+    }
+
+}
+
+
+loadLessons();
+
+</script>
+
+</body>
+
+</html>

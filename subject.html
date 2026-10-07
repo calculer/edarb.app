@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>المادة - Darb</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f7fb;
+            color: #222;
+        }
+
+        header {
+            background: #2563eb;
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+
+        header h1 {
+            margin-bottom: 8px;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 30px auto;
+            padding: 20px;
+        }
+
+        .back {
+            display: inline-block;
+            margin-bottom: 25px;
+            text-decoration: none;
+            color: #2563eb;
+            font-weight: bold;
+        }
+
+        .subject-title {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.07);
+            margin-bottom: 25px;
+        }
+
+        .subject-title h2 {
+            color: #2563eb;
+            margin-bottom: 10px;
+        }
+
+        .resources {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+        }
+
+        .resource {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.06);
+        }
+
+        .resource h3 {
+            margin-bottom: 10px;
+            color: #2563eb;
+        }
+
+        .resource p {
+            margin-bottom: 18px;
+            color: #666;
+        }
+
+        .resource button {
+            border: none;
+            background: #2563eb;
+            color: white;
+            padding: 11px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        footer {
+            margin-top: 50px;
+            background: #111827;
+            color: white;
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>دَرْب 📚</h1>
+    <p>منصتك التعليمية</p>
+</header>
+
+<div class="container">
+
+    <a class="back" href="index.html">← العودة إلى المواد</a>
+
+    <div class="subject-title">
+        <h2 id="subjectName"></h2>
+        <p>كل الموارد التعليمية الخاصة بهذه المادة</p>
+    </div>
+
+    <div class="resources">
+
+        <div class="resource">
+    <h3>📚 الدروس</h3>
+    <p>الوصول إلى جميع الدروس.</p>
+    <button onclick="openLessons()">
+    عرض الدروس
+</button>
+
+<script>
+function openLessons() {
+    const params = new URLSearchParams(window.location.search);
+    const subject = params.get("name");
+
+    if (!subject) {
+        alert("لم يتم تحديد المادة");
+        return;
+    }
+
+    window.location.href =
+        "lessons.html?subject=" + encodeURIComponent(subject);
+}
+</script>
+</div>
+        </div>
+
+        <div class="resource">
+            <h3>📄 الملخصات</h3>
+            <p>ملخصات تساعدك على المراجعة.</p>
+            <button>عرض الملخصات</button>
+        </div>
+
+        <div class="resource">
+            <h3>✏️ التمارين</h3>
+            <p>تمارين للتدرب وتحسين مستواك.</p>
+            <button>عرض التمارين</button>
+        </div>
+
+        <div class="resource">
+            <h3>📝 الاختبارات</h3>
+            <p>اختبر معلوماتك.</p>
+            <button>عرض الاختبارات</button>
+        </div>
+
+        <div class="resource">
+            <h3>📑 الامتحانات</h3>
+            <p>امتحانات سابقة للمراجعة.</p>
+            <button>عرض الامتحانات</button>
+        </div>
+
+        <div class="resource">
+            <h3>📥 الملفات</h3>
+            <p>ملفات وPDF وموارد إضافية.</p>
+            <button>عرض الملفات</button>
+        </div>
+
+    </div>
+
+</div>
+
+<footer>
+    © 2026 Darb - جميع الحقوق محفوظة
+</footer>
+<script>
+const params = new URLSearchParams(window.location.search);
+const subject = params.get("name");
+
+document.getElementById("subjectName").textContent = subject || "المادة";
+</script>
+<script>
+
+function openLessons() {
+
+    const params =
+        new URLSearchParams(
+            window.location.search
+        );
+
+    const subject =
+        params.get("name");
+
+    window.location.href =
+        "lessons.html?subject=" +
+        encodeURIComponent(subject);
+
+}
+
+</script>
+</body>
+</html>
