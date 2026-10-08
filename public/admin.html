@@ -1,661 +1,128 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
-
 <head>
-
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>إدارة Darb</title>
-
-<style>
-
-body {
-    font-family: Arial, sans-serif;
-    background: #f5f7fb;
-    margin: 0;
-    padding: 30px;
-}
-
-.container {
-    max-width: 800px;
-    margin: auto;
-    background: white;
-    padding: 30px;
-    border-radius: 15px;
-    box-shadow: 0 5px 20px rgba(0,0,0,.08);
-}
-
-h1,
-h2 {
-    color: #2563eb;
-}
-
-input,
-textarea,
-select,
-button {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 12px;
-    margin: 8px 0;
-    border-radius: 8px;
-    font-size: 15px;
-}
-
-input,
-textarea,
-select {
-    border: 1px solid #ddd;
-}
-
-textarea {
-    min-height: 100px;
-}
-
-button {
-    border: none;
-    background: #2563eb;
-    color: white;
-    cursor: pointer;
-    font-weight: bold;
-}
-
-button:hover {
-    background: #1d4ed8;
-}
-
-.delete {
-    background: #dc2626;
-}
-
-.delete:hover {
-    background: #b91c1c;
-}
-
-#panel {
-    display: none;
-}
-
-.lesson {
-    background: #f1f5f9;
-    padding: 15px;
-    margin: 15px 0;
-    border-radius: 10px;
-}
-
-.file {
-    color: #2563eb;
-    font-weight: bold;
-}
-
-.online {
-    background: #ecfdf5;
-    padding: 12px;
-    border-radius: 10px;
-    margin-bottom: 20px;
-}
-
-</style>
-
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#f6f8f7">
+  <title>إدارة المنصة | Darb</title><link rel="stylesheet" href="styles.css">
 </head>
-
 <body>
+  <header class="site-header"><div class="container header-inner"><a class="brand" href="index.html"><span class="brand-mark">D</span><span class="brand-copy">دَرْب<small>إدارة المنصة التعليمية</small></span></a><a class="header-link" href="index.html">العودة إلى الموقع</a></div></header>
+  <main class="container admin-main">
+    <section id="login" class="auth-wrap">
+      <div class="auth-card">
+        <span class="eyebrow">مساحة المشرف</span>
+        <h2>تسجيل الدخول</h2>
+        <p>أدخل كلمة مرور الإدارة للوصول إلى أدوات إدارة المحتوى.</p>
+        <form id="loginForm" class="form-fields">
+          <label class="field-label" for="password">كلمة المرور<input class="field" id="password" type="password" autocomplete="current-password" required></label>
+          <button class="button button-primary button-block" type="submit">دخول إلى لوحة الإدارة</button>
+          <div class="form-message" id="loginMessage" role="status"></div>
+        </form>
+      </div>
+    </section>
 
-<div class="container">
+    <section id="panel" hidden>
+      <div class="admin-heading"><span class="eyebrow">إدارة المنصة</span><h1>المحتوى التعليمي</h1><p>أضف الدروس والموارد ونظّم محتوى المقررات.</p></div>
+      <div class="admin-stats"><span>المستخدمون النشطون الآن</span><strong id="onlineCount">0</strong></div>
+      <div class="admin-grid">
+        <section class="panel">
+          <h2>إضافة درس</h2><p class="panel-intro">أضف درسًا جديدًا إلى أحد المقررات الدراسية.</p>
+          <form id="lessonForm" class="form-fields">
+            <label class="field-label" for="subject">المقرر<select class="field" id="subject" required><option value="">اختر المقرر</option><option>Comptabilité</option><option>Management</option><option>Mathématiques financières</option><option>Statistiques</option><option>Droit</option><option>Économie numérique</option><option>Commerce international</option><option>Recherche opérationnelle</option></select></label>
+            <label class="field-label" for="title">عنوان الدرس<input class="field" id="title" maxlength="180" required></label>
+            <label class="field-label" for="description">وصف الدرس<textarea class="field field-area" id="description"></textarea></label>
+            <label class="field-label" for="file">ملف الدرس<input class="field field-file" id="file" type="file"></label>
+            <button class="button button-primary button-block" type="submit">إضافة الدرس</button>
+            <div class="form-message" id="lessonMessage" role="status"></div>
+          </form>
+          <hr class="divider">
+          <h2>الدروس الحالية</h2><div class="admin-list" id="lessons"><p class="panel-intro">جارٍ تحميل الدروس...</p></div>
+        </section>
 
-<h1>🔐 لوحة إدارة Darb</h1>
-
-<!-- تسجيل الدخول -->
-
-<div id="login">
-
-<h2>دخول الإدارة</h2>
-
-<input
-    id="password"
-    type="password"
-    placeholder="كلمة المرور">
-
-<button onclick="login()">
-    🔑 دخول
-</button>
-
-</div>
-
-
-<!-- لوحة الإدارة -->
-
-<div id="panel">
-
-<div class="online">
-    👥 المستخدمون النشطون الآن:
-    <strong id="onlineCount">0</strong>
-</div>
-
-
-<h2>➕ إضافة درس</h2>
-
-<select id="subject">
-
-<option value="">
-    📚 اختر المادة
-</option>
-
-<option value="Comptabilité">
-    📘 Comptabilité
-</option>
-
-<option value="Management">
-    📗 Management
-</option>
-
-<option value="Mathématiques financières">
-    📕 Mathématiques financières
-</option>
-
-<option value="Statistiques">
-    📊 Statistiques
-</option>
-
-<option value="Droit">
-    ⚖️ Droit
-</option>
-
-<option value="Économie numérique">
-    💻 Économie numérique
-</option>
-
-<option value="Commerce international">
-    🌍 Commerce international
-</option>
-
-<option value="Recherche opérationnelle">
-    📐 Recherche opérationnelle
-</option>
-
-</select>
-
-
-<input
-    id="title"
-    placeholder="📝 عنوان الدرس">
-
-
-<textarea
-    id="description"
-    placeholder="📄 وصف الدرس"></textarea>
-
-
-<label>
-📎 اختر أي ملف
-</label>
-
-<input
-    id="file"
-    type="file">
-
-
-<button onclick="addLesson()">
-    ⬆️ إضافة الدرس
-</button>
-
-
-<hr>
-
-
-<h2>📚 الدروس الحالية</h2>
-
-<div id="lessons"></div>
-
-<hr>
-<h2>➕ إضافة محتوى تعليمي</h2>
-<select id="contentType">
-    <option value="summary">📄 ملخص</option>
-    <option value="exercise">✏️ تمرين</option>
-    <option value="quiz">📝 سؤال أو اختبار</option>
-    <option value="exam">📑 امتحان سابق</option>
-    <option value="resource">📥 ملف أو مورد</option>
-</select>
-<select id="contentSubject">
-    <option value="">📚 اختر المادة</option>
-    <option>Comptabilité</option><option>Management</option>
-    <option>Mathématiques financières</option><option>Statistiques</option>
-    <option>Droit</option><option>Économie numérique</option>
-    <option>Commerce international</option><option>Recherche opérationnelle</option>
-</select>
-<input id="contentTitle" placeholder="📝 عنوان المحتوى">
-<textarea id="contentDescription" placeholder="📄 وصف أو نص المحتوى"></textarea>
-<label for="contentFile">📎 ملف اختياري</label>
-<input id="contentFile" type="file">
-<button onclick="addContent()">⬆️ إضافة المحتوى</button>
-<h2>📚 المحتوى الحالي</h2>
-<div id="contentList"></div>
-
-</div>
-
-</div>
-
-
-<script>
-
-let adminToken = "";
-
-
-/* تسجيل الدخول */
-
-async function login() {
-
-    const password =
-        document.getElementById("password").value;
-
-    if (!password) {
-
-        alert("⚠️ اكتب كلمة المرور");
-
-        return;
+        <section class="panel">
+          <h2>إضافة مصدر تعليمي</h2><p class="panel-intro">أضف ملخصًا أو تمرينًا أو اختبارًا أو ملفًا إلى المقرر.</p>
+          <form id="contentForm" class="form-fields">
+            <label class="field-label" for="contentType">نوع المحتوى<select class="field" id="contentType" required><option value="summary">ملخص</option><option value="exercise">تمرين</option><option value="quiz">سؤال أو اختبار</option><option value="exam">امتحان سابق</option><option value="resource">ملف أو مورد</option></select></label>
+            <label class="field-label" for="contentSubject">المقرر<select class="field" id="contentSubject" required><option value="">اختر المقرر</option><option>Comptabilité</option><option>Management</option><option>Mathématiques financières</option><option>Statistiques</option><option>Droit</option><option>Économie numérique</option><option>Commerce international</option><option>Recherche opérationnelle</option></select></label>
+            <label class="field-label" for="contentTitle">العنوان<input class="field" id="contentTitle" maxlength="180" required></label>
+            <label class="field-label" for="contentDescription">الوصف أو نص السؤال<textarea class="field field-area" id="contentDescription"></textarea></label>
+            <label class="field-label" for="contentFile">ملف مرفق، اختياري<input class="field field-file" id="contentFile" type="file"></label>
+            <button class="button button-primary button-block" type="submit">إضافة المصدر</button>
+            <div class="form-message" id="contentMessage" role="status"></div>
+          </form>
+          <hr class="divider">
+          <h2>المصادر الحالية</h2><div class="admin-list" id="contentList"><p class="panel-intro">جارٍ تحميل المحتوى...</p></div>
+        </section>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer"><div class="container footer-inner"><span>دَرْب — تعلّمك، على طريقتك.</span><span>حقوق النشر 2026 Darb</span></div></footer>
+  <script>
+    let adminToken = "";
+    const contentLabels = {summary:"ملخص",exercise:"تمرين",quiz:"سؤال أو اختبار",exam:"امتحان سابق",resource:"ملف أو مورد"};
+    function escapeHtml(value) { return String(value || "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]); }
+    function setMessage(id, message, isError = true) { const node = document.getElementById(id); node.textContent = message; node.style.color = isError ? "var(--danger)" : "var(--brand)"; }
+    async function api(url, options = {}) {
+      const headers = {...(options.headers || {})};
+      if (adminToken) headers.Authorization = "Bearer " + adminToken;
+      const response = await fetch(url, {...options, headers});
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "تعذر إتمام الطلب.");
+      return data;
     }
-
-    try {
-
-        const response =
-            await fetch("/api/login", {
-
-                method: "POST",
-
-                headers: {
-                    "Content-Type": "application/json"
-                },
-
-                body: JSON.stringify({
-                    password: password
-                })
-
-            });
-
-        const data =
-            await response.json();
-
-        if (response.ok) {
-
-            adminToken = data.token;
-
-            document.getElementById("login")
-                .style.display = "none";
-
-            document.getElementById("panel")
-                .style.display = "block";
-
-            loadLessons();
-            loadContent();
-
-            updateOnline();
-
-        } else {
-
-            alert("❌ " + data.message);
-
-        }
-
-    } catch (error) {
-
-        alert(
-            "❌ تأكد أن server.js يعمل"
-        );
-
-    }
-
-}
-
-
-/* إضافة درس */
-
-async function addLesson() {
-
-    const subject =
-        document.getElementById("subject").value;
-
-    const title =
-        document.getElementById("title").value;
-
-    const description =
-        document.getElementById("description").value;
-
-    const file =
-        document.getElementById("file").files[0];
-
-
-    if (!subject) {
-
-        alert("⚠️ اختر المادة");
-
-        return;
-    }
-
-
-    if (!title) {
-
-        alert("⚠️ اكتب عنوان الدرس");
-
-        return;
-    }
-
-
-    const formData =
-        new FormData();
-
-    formData.append(
-        "subject",
-        subject
-    );
-
-    formData.append(
-        "title",
-        title
-    );
-
-    formData.append(
-        "description",
-        description
-    );
-
-
-    if (file) {
-
-        formData.append(
-            "file",
-            file
-        );
-
-    }
-
-
-    const response =
-        await fetch(
-            "/api/lessons",
-            {
-
-                method: "POST",
-
-                headers: {
-                    "Authorization":
-                        "Bearer " + adminToken
-                },
-
-                body: formData
-
-            }
-        );
-
-
-    if (response.ok) {
-
-        alert("✅ تم إضافة الدرس");
-
-        document.getElementById("subject").value = "";
-
-        document.getElementById("title").value = "";
-
-        document.getElementById("description").value = "";
-
-        document.getElementById("file").value = "";
-
-        loadLessons();
-
-    } else {
-
-        alert("❌ لم تتم إضافة الدرس");
-
-    }
-
-}
-
-
-/* عرض الدروس */
-
-async function loadLessons() {
-
-    const response =
-        await fetch("/api/lessons");
-
-    const lessons =
-        await response.json();
-
-    const container =
-        document.getElementById("lessons");
-
-
-    if (lessons.length === 0) {
-
-        container.innerHTML =
-            "<p>لا توجد دروس.</p>";
-
-        return;
-    }
-
-
-    container.innerHTML =
-        lessons.map(
-            lesson => `
-
-            <div class="lesson">
-
-                <h3>
-                    📖 ${lesson.title}
-                </h3>
-
-                <p>
-                    📚 ${lesson.subject}
-                </p>
-
-                <p>
-                    ${lesson.description || ""}
-                </p>
-
-                ${
-                    lesson.file
-                    ?
-                    `
-                    <a
-                        class="file"
-                        href="${lesson.file}"
-                        target="_blank">
-
-                        📎 ${lesson.originalFileName}
-
-                    </a>
-                    `
-                    :
-                    ""
-                }
-
-                <button
-                    class="delete"
-                    onclick="deleteLesson(${lesson.id})">
-
-                    🗑️ حذف الدرس
-
-                </button>
-
-            </div>
-
-            `
-        ).join("");
-
-}
-
-
-/* حذف درس */
-
-async function deleteLesson(id) {
-
-    const confirmDelete =
-        confirm(
-            "هل أنت متأكد من حذف هذا الدرس؟"
-        );
-
-    if (!confirmDelete) {
-        return;
-    }
-
-
-    const response =
-        await fetch(
-            "/api/lessons/" + id,
-            {
-
-                method: "DELETE",
-
-                headers: {
-                    "Authorization":
-                        "Bearer " + adminToken
-                }
-
-            }
-        );
-
-
-    if (response.ok) {
-
-        alert("✅ تم حذف الدرس");
-
-        loadLessons();
-
-    } else {
-
-        alert("❌ لم يتم الحذف");
-
-    }
-
-}
-
-const contentLabels = { summary: "ملخص", exercise: "تمرين", quiz: "سؤال أو اختبار", exam: "امتحان سابق", resource: "ملف أو مورد" };
-
-async function addContent() {
-    const subject = document.getElementById("contentSubject").value;
-    const title = document.getElementById("contentTitle").value.trim();
-    if (!subject || !title) return alert("اختر المادة واكتب عنوان المحتوى");
-    const data = new FormData();
-    data.append("type", document.getElementById("contentType").value);
-    data.append("subject", subject);
-    data.append("title", title);
-    data.append("description", document.getElementById("contentDescription").value);
-    const file = document.getElementById("contentFile").files[0];
-    if (file) data.append("file", file);
-    const response = await fetch("/api/content", { method: "POST", headers: { Authorization: "Bearer " + adminToken }, body: data });
-    const result = await response.json();
-    if (!response.ok) return alert("❌ " + (result.message || "لم تتم الإضافة"));
-    document.getElementById("contentTitle").value = "";
-    document.getElementById("contentDescription").value = "";
-    document.getElementById("contentFile").value = "";
-    document.getElementById("contentSubject").value = "";
-    loadContent();
-}
-
-function escapeHtml(value) {
-    return String(value || "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
-}
-
-async function loadContent() {
-    const response = await fetch("/api/content");
-    const items = await response.json();
-    const container = document.getElementById("contentList");
-    if (!items.length) { container.innerHTML = "<p>لا يوجد محتوى إضافي بعد.</p>"; return; }
-    container.innerHTML = items.map(item => `<div class="lesson"><h3>${escapeHtml(contentLabels[item.type] || item.type)}: ${escapeHtml(item.title)}</h3><p>📚 ${escapeHtml(item.subject)}</p><p>${escapeHtml(item.description)}</p>${item.file ? `<a class="file" href="${encodeURI(item.file)}" target="_blank" rel="noopener">📎 ${escapeHtml(item.originalFileName || "فتح الملف")}</a>` : ""}<button class="delete" onclick="deleteContent(${Number(item.id)})">🗑️ حذف المحتوى</button></div>`).join("");
-}
-
-async function deleteContent(id) {
-    if (!confirm("هل أنت متأكد من حذف هذا المحتوى؟")) return;
-    const response = await fetch("/api/content/" + id, { method: "DELETE", headers: { Authorization: "Bearer " + adminToken } });
-    if (response.ok) loadContent(); else alert("❌ لم يتم الحذف");
-}
-
-
-/* عدد المستخدمين */
-
-async function updateOnline() {
-
-    try {
-
-        const response =
-            await fetch("/api/online");
-
-        const data =
-            await response.json();
-
-        document.getElementById(
-            "onlineCount"
-        ).textContent = data.count;
-
-    } catch (error) {}
-
-}
-
-
-setInterval(
-    updateOnline,
-    5000
-);
-
-</script>
-<script>
-
-const userId =
-    localStorage.getItem("darbUserId") ||
-    "user-" + Date.now();
-
-localStorage.setItem(
-    "darbUserId",
-    userId
-);
-
-async function heartbeat() {
-
-    await fetch("/api/online", {
-
-        method: "POST",
-
-        headers: {
-            "Content-Type": "application/json"
-        },
-
-        body: JSON.stringify({
-            userId: userId
-        })
-
+    document.getElementById("loginForm").addEventListener("submit", async event => {
+      event.preventDefault(); setMessage("loginMessage", "جارٍ التحقق...");
+      try {
+        const result = await api("/api/login", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:document.getElementById("password").value})});
+        adminToken = result.token;
+        document.getElementById("login").hidden = true;
+        document.getElementById("panel").hidden = false;
+        setMessage("loginMessage", "", false);
+        loadLessons(); loadContent(); updateOnline();
+      } catch (error) { setMessage("loginMessage", error.message); }
     });
-
-}
-
-async function updateOnline() {
-
-    const response =
-        await fetch("/api/online");
-
-    const data =
-        await response.json();
-
-    document.getElementById(
-        "onlineCount"
-    ).textContent = data.count;
-
-}
-
-heartbeat();
-
-setInterval(
-    heartbeat,
-    10000
-);
-
-updateOnline();
-
-setInterval(
-    updateOnline,
-    5000
-);
-
-</script>
+    document.getElementById("lessonForm").addEventListener("submit", async event => {
+      event.preventDefault(); setMessage("lessonMessage", "جارٍ حفظ الدرس...", false);
+      const data = new FormData();
+      data.append("subject", document.getElementById("subject").value);
+      data.append("title", document.getElementById("title").value.trim());
+      data.append("description", document.getElementById("description").value);
+      const file = document.getElementById("file").files[0]; if (file) data.append("file", file);
+      try { await api("/api/lessons", {method:"POST",body:data}); event.target.reset(); setMessage("lessonMessage", "تمت إضافة الدرس بنجاح.", false); loadLessons(); }
+      catch (error) { setMessage("lessonMessage", error.message); }
+    });
+    document.getElementById("contentForm").addEventListener("submit", async event => {
+      event.preventDefault(); setMessage("contentMessage", "جارٍ حفظ المصدر...", false);
+      const data = new FormData();
+      data.append("type", document.getElementById("contentType").value);
+      data.append("subject", document.getElementById("contentSubject").value);
+      data.append("title", document.getElementById("contentTitle").value.trim());
+      data.append("description", document.getElementById("contentDescription").value);
+      const file = document.getElementById("contentFile").files[0]; if (file) data.append("file", file);
+      try { await api("/api/content", {method:"POST",body:data}); event.target.reset(); setMessage("contentMessage", "تمت إضافة المصدر بنجاح.", false); loadContent(); }
+      catch (error) { setMessage("contentMessage", error.message); }
+    });
+    async function loadLessons() {
+      const box = document.getElementById("lessons");
+      try {
+        const lessons = await api("/api/lessons");
+        if (!lessons.length) { box.innerHTML = '<p class="panel-intro">لا توجد دروس مضافة بعد.</p>'; return; }
+        box.innerHTML = lessons.map(item => `<article class="admin-item"><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.subject)}${item.description ? " · " + escapeHtml(item.description) : ""}</p><div class="admin-item-actions">${item.file ? `<a href="${encodeURI(item.file)}" target="_blank" rel="noopener">فتح الملف المرفق</a>` : "<span></span>"}<button class="button button-danger" type="button" data-delete-lesson="${Number(item.id)}">حذف</button></div></article>`).join("");
+        box.querySelectorAll("[data-delete-lesson]").forEach(button => button.addEventListener("click", () => deleteLesson(button.dataset.deleteLesson)));
+      } catch (error) { box.innerHTML = `<p class="form-message">${escapeHtml(error.message)}</p>`; }
+    }
+    async function loadContent() {
+      const box = document.getElementById("contentList");
+      try {
+        const items = await api("/api/content");
+        if (!items.length) { box.innerHTML = '<p class="panel-intro">لا توجد مصادر مضافة بعد.</p>'; return; }
+        box.innerHTML = items.map(item => `<article class="admin-item"><h3>${escapeHtml(contentLabels[item.type] || item.type)}: ${escapeHtml(item.title)}</h3><p>${escapeHtml(item.subject)}${item.description ? " · " + escapeHtml(item.description) : ""}</p><div class="admin-item-actions">${item.file ? `<a href="${encodeURI(item.file)}" target="_blank" rel="noopener">فتح الملف المرفق</a>` : "<span></span>"}<button class="button button-danger" type="button" data-delete-content="${Number(item.id)}">حذف</button></div></article>`).join("");
+        box.querySelectorAll("[data-delete-content]").forEach(button => button.addEventListener("click", () => deleteContent(button.dataset.deleteContent)));
+      } catch (error) { box.innerHTML = `<p class="form-message">${escapeHtml(error.message)}</p>`; }
+    }
+    async function deleteLesson(id) { if (!confirm("هل تريد حذف هذا الدرس؟")) return; try { await api("/api/lessons/" + encodeURIComponent(id), {method:"DELETE"}); loadLessons(); } catch (error) { alert(error.message); } }
+    async function deleteContent(id) { if (!confirm("هل تريد حذف هذا المصدر؟")) return; try { await api("/api/content/" + encodeURIComponent(id), {method:"DELETE"}); loadContent(); } catch (error) { alert(error.message); } }
+    async function updateOnline() { try { const result = await api("/api/online"); document.getElementById("onlineCount").textContent = result.count; } catch {} }
+    setInterval(() => { if (!document.getElementById("panel").hidden) updateOnline(); }, 10000);
+  </script>
 </body>
-
 </html>

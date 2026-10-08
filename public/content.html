@@ -1,37 +1,34 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>المحتوى التعليمي - Darb</title>
-  <style>
-    *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f5f7fb;color:#222}header{background:#2563eb;color:#fff;text-align:center;padding:25px}.container{max-width:950px;margin:auto;padding:25px}.back{display:inline-block;margin:5px 0 20px;color:#2563eb;text-decoration:none}.item{background:#fff;padding:20px;margin:15px 0;border-radius:12px;box-shadow:0 4px 12px #00000010}.item h2{color:#2563eb}.item p{white-space:pre-wrap;line-height:1.8}.item a{display:inline-block;margin:8px 0;padding:10px 14px;border-radius:8px;background:#2563eb;color:#fff;text-decoration:none}.empty{background:#fff;border-radius:12px;padding:25px;text-align:center}
-  </style>
-</head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#f6f8f7"><title>المصادر التعليمية | Darb</title><link rel="stylesheet" href="styles.css"></head>
 <body>
-<header><h1 id="pageTitle">المحتوى التعليمي</h1><p id="subjectTitle"></p></header>
-<main class="container"><a class="back" id="backLink">← العودة إلى المادة</a><div id="items">جاري تحميل المحتوى...</div></main>
-<script>
-const labels = {summary:"الملخصات",exercise:"التمارين",quiz:"الأسئلة والاختبارات",exam:"الامتحانات السابقة",resource:"الملفات والموارد"};
-const params = new URLSearchParams(location.search);
-const type = params.get("type") || "resource";
-const subject = params.get("subject") || "";
-function escapeHtml(value){return String(value||"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]);}
-document.getElementById("pageTitle").textContent = labels[type] || "المحتوى التعليمي";
-document.getElementById("subjectTitle").textContent = subject;
-document.getElementById("backLink").href = "subject.html?name=" + encodeURIComponent(subject);
-async function load(){
-  const query = new URLSearchParams({type}); if(subject) query.set("subject",subject);
-  try {
-    const response = await fetch("/api/content?" + query.toString());
-    const items = await response.json();
-    const container = document.getElementById("items");
-    if(!response.ok) throw new Error();
-    if(!items.length){container.innerHTML='<div class="empty">لا يوجد محتوى في هذا القسم بعد.</div>';return;}
-    container.innerHTML = items.map(item=>`<article class="item"><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.description)}</p>${item.file?`<a href="${encodeURI(item.file)}" target="_blank" rel="noopener">👁️ فتح ${escapeHtml(item.originalFileName||"الملف")}</a> <a href="${encodeURI(item.file)}" download>⬇️ تحميل الملف</a>`:""}</article>`).join("");
-  } catch(error){document.getElementById("items").innerHTML='<div class="empty">تعذر تحميل المحتوى. حاول تحديث الصفحة.</div>';}
-}
-load();
-</script>
+  <header class="site-header"><div class="container header-inner"><a class="brand" href="index.html"><span class="brand-mark">D</span><span class="brand-copy">دَرْب<small>منصتك التعليمية</small></span></a><a class="header-link" href="admin.html">لوحة الإدارة</a></div></header>
+  <main class="container page-main">
+    <nav class="breadcrumb"><a href="index.html">الرئيسية</a><span aria-hidden="true">/</span><a id="backLink">المقرر</a><span aria-hidden="true">/</span><span id="crumbType">المصادر</span></nav>
+    <section class="page-banner"><span class="eyebrow">مكتبة المقرر</span><h1 id="pageTitle">المصادر التعليمية</h1><p id="subjectTitle"></p></section>
+    <div id="items" class="content-list"><div class="loading">جارٍ تحميل المحتوى...</div></div>
+  </main>
+  <footer class="site-footer"><div class="container footer-inner"><span>دَرْب — تعلّمك، على طريقتك.</span><span>حقوق النشر 2026 Darb</span></div></footer>
+  <script>
+    const labels = {summary:"الملخصات",exercise:"التمارين",quiz:"الأسئلة والاختبارات",exam:"الامتحانات السابقة",resource:"الملفات والموارد"};
+    const params = new URLSearchParams(location.search), type = params.get("type") || "resource", subject = params.get("subject") || "";
+    const label = labels[type] || "المصادر التعليمية";
+    document.getElementById("pageTitle").textContent = label;
+    document.getElementById("crumbType").textContent = label;
+    document.getElementById("subjectTitle").textContent = subject;
+    const backLink = document.getElementById("backLink"); backLink.textContent = subject || "المقررات"; backLink.href = subject ? "subject.html?name=" + encodeURIComponent(subject) : "index.html";
+    function escapeHtml(value) { return String(value || "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]); }
+    async function load() {
+      const query = new URLSearchParams({type}); if (subject) query.set("subject", subject);
+      const box = document.getElementById("items");
+      try {
+        const response = await fetch("/api/content?" + query.toString()), items = await response.json();
+        if (!response.ok) throw new Error();
+        if (!items.length) { box.innerHTML = '<div class="empty-state">لا توجد مواد مضافة لهذا القسم حتى الآن.</div>'; return; }
+        box.innerHTML = items.map(item => `<article class="content-card"><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.description)}</p>${item.file ? `<div class="content-actions"><a class="button button-primary" href="${encodeURI(item.file)}" target="_blank" rel="noopener">فتح ${escapeHtml(item.originalFileName || "الملف")}</a><a class="button button-outline" href="${encodeURI(item.file)}" download>تنزيل الملف</a></div>` : ""}</article>`).join("");
+      } catch { box.innerHTML = '<div class="empty-state">تعذر تحميل المحتوى. حدّث الصفحة وحاول مرة أخرى.</div>'; }
+    }
+    load();
+  </script>
 </body>
 </html>

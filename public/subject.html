@@ -3,31 +3,34 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>المادة - Darb</title>
-  <style>
-    *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f5f7fb;color:#222}header{background:#2563eb;color:#fff;padding:25px;text-align:center}.container{max-width:1100px;margin:30px auto;padding:20px}.back{display:inline-block;margin-bottom:25px;color:#2563eb;text-decoration:none;font-weight:bold}.subject-title,.resource{background:#fff;padding:25px;border-radius:15px;text-align:center;box-shadow:0 5px 18px #00000012}.subject-title{margin-bottom:25px}.subject-title h2,.resource h3{color:#2563eb}.resources{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px}.resource p{color:#666;min-height:42px}.resource button{border:0;background:#2563eb;color:#fff;padding:11px 20px;border-radius:8px;cursor:pointer}footer{margin-top:50px;background:#111827;color:white;text-align:center;padding:20px}
-  </style>
+  <meta name="theme-color" content="#f6f8f7">
+  <title>المقرر الدراسي | Darb</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<header><h1>دَرْب 📚</h1><p>منصتك التعليمية</p></header>
-<main class="container">
-  <a class="back" href="index.html">← العودة إلى المواد</a>
-  <div class="subject-title"><h2 id="subjectName">المادة</h2><p>كل الموارد التعليمية الخاصة بهذه المادة</p></div>
-  <div class="resources">
-    <div class="resource"><h3>📚 الدروس</h3><p>الوصول إلى جميع الدروس.</p><button onclick="openLessons()">عرض الدروس</button></div>
-    <div class="resource"><h3>📄 الملخصات</h3><p>ملخصات تساعدك على المراجعة.</p><button onclick="openContent('summary')">عرض الملخصات</button></div>
-    <div class="resource"><h3>✏️ التمارين</h3><p>تمارين للتدرب وتحسين مستواك.</p><button onclick="openContent('exercise')">عرض التمارين</button></div>
-    <div class="resource"><h3>📝 الأسئلة والاختبارات</h3><p>أسئلة واختبارات لمراجعة معلوماتك.</p><button onclick="openContent('quiz')">عرض الأسئلة والاختبارات</button></div>
-    <div class="resource"><h3>📑 الامتحانات السابقة</h3><p>امتحانات سابقة للمراجعة.</p><button onclick="openContent('exam')">عرض الامتحانات</button></div>
-    <div class="resource"><h3>📥 الملفات والموارد</h3><p>ملفات وPDF وموارد إضافية.</p><button onclick="openContent('resource')">عرض الملفات</button></div>
-  </div>
-</main>
-<footer>© 2026 Darb - جميع الحقوق محفوظة</footer>
-<script>
-const subject = new URLSearchParams(location.search).get("name") || "";
-document.getElementById("subjectName").textContent = subject || "المادة";
-function openLessons(){ location.href = "lessons.html?subject=" + encodeURIComponent(subject); }
-function openContent(type){ location.href = "content.html?type=" + encodeURIComponent(type) + "&subject=" + encodeURIComponent(subject); }
-</script>
+  <header class="site-header"><div class="container header-inner"><a class="brand" href="index.html"><span class="brand-mark">D</span><span class="brand-copy">دَرْب<small>منصتك التعليمية</small></span></a><a class="header-link" href="admin.html">لوحة الإدارة</a></div></header>
+  <main class="container page-main">
+    <nav class="breadcrumb" aria-label="مسار التصفح"><a href="index.html">الرئيسية</a><span aria-hidden="true">/</span><span id="crumbSubject">المقرر</span></nav>
+    <section class="page-banner"><span class="eyebrow">مساحتك الدراسية</span><h1 id="subjectName">المقرر الدراسي</h1><p>كل ما تحتاجه للتعلّم والمراجعة في مكان واحد.</p></section>
+    <div class="section-heading"><div><h2>المصادر التعليمية</h2><p>اختر نوع المحتوى الذي تريد استعراضه.</p></div></div>
+    <section class="resource-grid" aria-label="أقسام المحتوى">
+      <a class="resource-card" id="lessonsLink"><span class="resource-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M4 5.5v16M8 7h8M8 11h8"/></svg></span><h2>الدروس</h2><p>شروحات منظمة تساعدك على فهم موضوعات المقرر.</p><span class="text-link">عرض الدروس <span aria-hidden="true">←</span></span></a>
+      <a class="resource-card content-link" data-type="summary"><span class="resource-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 3.5h7l5 5V20a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V5.5a2 2 0 0 1 2-2Z"/><path d="M14 3.5v5h5M8 13h8M8 17h8"/></svg></span><h2>الملخصات</h2><p>أهم الأفكار والنقاط الأساسية للمراجعة السريعة.</p><span class="text-link">عرض الملخصات <span aria-hidden="true">←</span></span></a>
+      <a class="resource-card content-link" data-type="exercise"><span class="resource-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m5 12 4 4L19 6"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8"/></svg></span><h2>التمارين</h2><p>تطبيقات ومسائل تساعدك على تثبيت ما تعلمته.</p><span class="text-link">عرض التمارين <span aria-hidden="true">←</span></span></a>
+      <a class="resource-card content-link" data-type="quiz"><span class="resource-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 1 1 4.2 1.8c-1.2 1-1.8 1.4-1.8 2.7M12 17h.01"/></svg></span><h2>الأسئلة والاختبارات</h2><p>راجع معلوماتك واختبر مدى استيعابك للمقرر.</p><span class="text-link">عرض الأسئلة والاختبارات <span aria-hidden="true">←</span></span></a>
+      <a class="resource-card content-link" data-type="exam"><span class="resource-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span><h2>الامتحانات السابقة</h2><p>تدرّب على نماذج سابقة واستعد للامتحان.</p><span class="text-link">عرض الامتحانات <span aria-hidden="true">←</span></span></a>
+      <a class="resource-card content-link" data-type="resource"><span class="resource-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H10l2 2h5.5A2.5 2.5 0 0 1 20 9.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><path d="M4 10h16"/></svg></span><h2>الملفات والموارد</h2><p>مواد إضافية وملفات داعمة للمسار الدراسي.</p><span class="text-link">عرض الملفات <span aria-hidden="true">←</span></span></a>
+    </section>
+  </main>
+  <footer class="site-footer"><div class="container footer-inner"><span>دَرْب — تعلّمك، على طريقتك.</span><span>حقوق النشر 2026 Darb</span></div></footer>
+  <script>
+    const subject = new URLSearchParams(location.search).get("name") || "";
+    document.getElementById("subjectName").textContent = subject || "المقرر الدراسي";
+    document.getElementById("crumbSubject").textContent = subject || "المقرر";
+    document.getElementById("lessonsLink").href = "lessons.html?subject=" + encodeURIComponent(subject);
+    document.querySelectorAll(".content-link").forEach(link => {
+      link.href = "content.html?type=" + encodeURIComponent(link.dataset.type) + "&subject=" + encodeURIComponent(subject);
+    });
+  </script>
 </body>
 </html>
