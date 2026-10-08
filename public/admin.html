@@ -208,6 +208,30 @@ button:hover {
 
 <div id="lessons"></div>
 
+<hr>
+<h2>➕ إضافة محتوى تعليمي</h2>
+<select id="contentType">
+    <option value="summary">📄 ملخص</option>
+    <option value="exercise">✏️ تمرين</option>
+    <option value="quiz">📝 سؤال أو اختبار</option>
+    <option value="exam">📑 امتحان سابق</option>
+    <option value="resource">📥 ملف أو مورد</option>
+</select>
+<select id="contentSubject">
+    <option value="">📚 اختر المادة</option>
+    <option>Comptabilité</option><option>Management</option>
+    <option>Mathématiques financières</option><option>Statistiques</option>
+    <option>Droit</option><option>Économie numérique</option>
+    <option>Commerce international</option><option>Recherche opérationnelle</option>
+</select>
+<input id="contentTitle" placeholder="📝 عنوان المحتوى">
+<textarea id="contentDescription" placeholder="📄 وصف أو نص المحتوى"></textarea>
+<label for="contentFile">📎 ملف اختياري</label>
+<input id="contentFile" type="file">
+<button onclick="addContent()">⬆️ إضافة المحتوى</button>
+<h2>📚 المحتوى الحالي</h2>
+<div id="contentList"></div>
+
 </div>
 
 </div>
@@ -263,6 +287,7 @@ async function login() {
                 .style.display = "block";
 
             loadLessons();
+            loadContent();
 
             updateOnline();
 
@@ -502,6 +527,47 @@ async function deleteLesson(id) {
 
     }
 
+}
+
+const contentLabels = { summary: "ملخص", exercise: "تمرين", quiz: "سؤال أو اختبار", exam: "امتحان سابق", resource: "ملف أو مورد" };
+
+async function addContent() {
+    const subject = document.getElementById("contentSubject").value;
+    const title = document.getElementById("contentTitle").value.trim();
+    if (!subject || !title) return alert("اختر المادة واكتب عنوان المحتوى");
+    const data = new FormData();
+    data.append("type", document.getElementById("contentType").value);
+    data.append("subject", subject);
+    data.append("title", title);
+    data.append("description", document.getElementById("contentDescription").value);
+    const file = document.getElementById("contentFile").files[0];
+    if (file) data.append("file", file);
+    const response = await fetch("/api/content", { method: "POST", headers: { Authorization: "Bearer " + adminToken }, body: data });
+    const result = await response.json();
+    if (!response.ok) return alert("❌ " + (result.message || "لم تتم الإضافة"));
+    document.getElementById("contentTitle").value = "";
+    document.getElementById("contentDescription").value = "";
+    document.getElementById("contentFile").value = "";
+    document.getElementById("contentSubject").value = "";
+    loadContent();
+}
+
+function escapeHtml(value) {
+    return String(value || "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+}
+
+async function loadContent() {
+    const response = await fetch("/api/content");
+    const items = await response.json();
+    const container = document.getElementById("contentList");
+    if (!items.length) { container.innerHTML = "<p>لا يوجد محتوى إضافي بعد.</p>"; return; }
+    container.innerHTML = items.map(item => `<div class="lesson"><h3>${escapeHtml(contentLabels[item.type] || item.type)}: ${escapeHtml(item.title)}</h3><p>📚 ${escapeHtml(item.subject)}</p><p>${escapeHtml(item.description)}</p>${item.file ? `<a class="file" href="${encodeURI(item.file)}" target="_blank" rel="noopener">📎 ${escapeHtml(item.originalFileName || "فتح الملف")}</a>` : ""}<button class="delete" onclick="deleteContent(${Number(item.id)})">🗑️ حذف المحتوى</button></div>`).join("");
+}
+
+async function deleteContent(id) {
+    if (!confirm("هل أنت متأكد من حذف هذا المحتوى؟")) return;
+    const response = await fetch("/api/content/" + id, { method: "DELETE", headers: { Authorization: "Bearer " + adminToken } });
+    if (response.ok) loadContent(); else alert("❌ لم يتم الحذف");
 }
 
 

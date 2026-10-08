@@ -14,6 +14,15 @@ const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 const LESSONS_FILE = path.join(DATA_DIR, "lessons.json");
+const CONTENT_FILE = path.join(DATA_DIR, "content.json");
+const CONTENT_TYPES = new Set(["summary", "exercise", "quiz", "exam", "resource"]);
+const CONTENT_LABELS = {
+    summary: "ملخص",
+    exercise: "تمرين",
+    quiz: "سؤال أو اختبار",
+    exam: "امتحان سابق",
+    resource: "ملف أو مورد"
+};
 
 const ADMIN_PASSWORD =
     process.env.ADMIN_PASSWORD ||
@@ -34,9 +43,31 @@ if (!ADMIN_PASSWORD || !JWT_SECRET) {
 
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-if (!fs.existsSync(LESSONS_FILE)) {
-    fs.writeFileSync(LESSONS_FILE, "[]", "utf8");
+// Seed a newly attached Render disk once, preserving lessons and uploads already in Git.
+if (path.resolve(DATA_DIR) !== path.resolve(__dirname)) {
+    const seedMarker = path.join(DATA_DIR, ".darb-seeded");
+    if (!fs.existsSync(seedMarker)) {
+        for (const filename of ["lessons.json", "content.json"]) {
+            const destination = path.join(DATA_DIR, filename);
+            const source = path.join(__dirname, filename);
+            if (!fs.existsSync(destination)) fs.copyFileSync(source, destination);
+        }
+        const sourceUploads = path.join(__dirname, "uploads");
+        if (fs.existsSync(sourceUploads)) {
+            for (const filename of fs.readdirSync(sourceUploads)) {
+                const source = path.join(sourceUploads, filename);
+                const destination = path.join(UPLOADS_DIR, filename);
+                if (fs.statSync(source).isFile() && !fs.existsSync(destination)) {
+                    fs.copyFileSync(source, destination);
+                }
+            }
+        }
+        fs.writeFileSync(seedMarker, new Date().toISOString(), "utf8");
+    }
 }
+
+if (!fs.existsSync(LESSONS_FILE)) fs.writeFileSync(LESSONS_FILE, "[]", "utf8");
+if (!fs.existsSync(CONTENT_FILE)) fs.writeFileSync(CONTENT_FILE, "[]", "utf8");
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
@@ -60,6 +91,23 @@ function saveLessons(lessons) {
         JSON.stringify(lessons, null, 2),
         "utf8"
     );
+}
+
+function readContent() {
+    const content = JSON.parse(fs.readFileSync(CONTENT_FILE, "utf8"));
+    if (!Array.isArray(content)) throw new Error("content.json must contain an array");
+    return content;
+}
+
+function saveContent(content) {
+    fs.writeFileSync(CONTENT_FILE, JSON.stringify(content, null, 2), "utf8");
+}
+
+function removeUploadedFile(item) {
+    if (!item?.file) return;
+    const filename = path.basename(item.file);
+    const filePath = path.join(UPLOADS_DIR, filename);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 }
 
 function adminOnly(req, res, next) {
@@ -311,4 +359,57 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, "0.0.0.0", () => {
     console.log(`Darb server running on port ${PORT}`);
+});
+
+// محتوى المواد: ملخصات وتمارين واختبارات وامتحانات وموارد
+app.get("/api/content", (req, res, next) => {
+    try {
+        const { subject, type } = req.query;
+        if (type && !CONTENT_TYPES.has(type)) {
+            return res.status(400).json({ message: "نوع المحتوى غير صالح" });
+        }
+        const content = readContent().filter(item =>
+            (!subject || item.subject === subject) && (!type || item.type === type)
+        );
+        res.json(content);
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post("/api/content", adminOnly, upload.single("file"), (req, res, next) => {
+    try {
+        const { type, subject, title, description } = req.body;
+        if (!CONTENT_TYPES.has(type) || !subject || !title) {
+            if (req.file) fs.unlinkSync(req.file.path);
+            return res.status(400).json({ message: "اختر نوع المحتوى والمادة واكتب العنوان" });
+        }
+        const content = readContent();
+        const item = {
+            id: Date.now(), type, subject, title,
+            description: description || "",
+            file: req.file ? "/uploads/" + req.file.filename : null,
+            originalFileName: req.file ? req.file.originalname : null,
+            createdAt: new Date().toISOString()
+        };
+        content.push(item);
+        saveContent(content);
+        res.status(201).json({ success: true, item });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.delete("/api/content/:id", adminOnly, (req, res, next) => {
+    try {
+        const id = Number(req.params.id);
+        const content = readContent();
+        const item = content.find(entry => entry.id === id);
+        if (!item) return res.status(404).json({ message: "المحتوى غير موجود" });
+        saveContent(content.filter(entry => entry.id !== id));
+        removeUploadedFile(item);
+        res.json({ success: true, message: "تم حذف المحتوى" });
+    } catch (error) {
+        next(error);
+    }
 });
