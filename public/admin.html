@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>إدارة Darb</title>
+
+<style>
+
+body {
+    font-family: Arial, sans-serif;
+    background: #f5f7fb;
+    margin: 0;
+    padding: 30px;
+}
+
+.container {
+    max-width: 800px;
+    margin: auto;
+    background: white;
+    padding: 30px;
+    border-radius: 15px;
+    box-shadow: 0 5px 20px rgba(0,0,0,.08);
+}
+
+h1,
+h2 {
+    color: #2563eb;
+}
+
+input,
+textarea,
+select,
+button {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px;
+    margin: 8px 0;
+    border-radius: 8px;
+    font-size: 15px;
+}
+
+input,
+textarea,
+select {
+    border: 1px solid #ddd;
+}
+
+textarea {
+    min-height: 100px;
+}
+
+button {
+    border: none;
+    background: #2563eb;
+    color: white;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+button:hover {
+    background: #1d4ed8;
+}
+
+.delete {
+    background: #dc2626;
+}
+
+.delete:hover {
+    background: #b91c1c;
+}
+
+#panel {
+    display: none;
+}
+
+.lesson {
+    background: #f1f5f9;
+    padding: 15px;
+    margin: 15px 0;
+    border-radius: 10px;
+}
+
+.file {
+    color: #2563eb;
+    font-weight: bold;
+}
+
+.online {
+    background: #ecfdf5;
+    padding: 12px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>🔐 لوحة إدارة Darb</h1>
+
+<!-- تسجيل الدخول -->
+
+<div id="login">
+
+<h2>دخول الإدارة</h2>
+
+<input
+    id="password"
+    type="password"
+    placeholder="كلمة المرور">
+
+<button onclick="login()">
+    🔑 دخول
+</button>
+
+</div>
+
+
+<!-- لوحة الإدارة -->
+
+<div id="panel">
+
+<div class="online">
+    👥 المستخدمون النشطون الآن:
+    <strong id="onlineCount">0</strong>
+</div>
+
+
+<h2>➕ إضافة درس</h2>
+
+<select id="subject">
+
+<option value="">
+    📚 اختر المادة
+</option>
+
+<option value="Comptabilité">
+    📘 Comptabilité
+</option>
+
+<option value="Management">
+    📗 Management
+</option>
+
+<option value="Mathématiques financières">
+    📕 Mathématiques financières
+</option>
+
+<option value="Statistiques">
+    📊 Statistiques
+</option>
+
+<option value="Droit">
+    ⚖️ Droit
+</option>
+
+<option value="Économie numérique">
+    💻 Économie numérique
+</option>
+
+<option value="Commerce international">
+    🌍 Commerce international
+</option>
+
+<option value="Recherche opérationnelle">
+    📐 Recherche opérationnelle
+</option>
+
+</select>
+
+
+<input
+    id="title"
+    placeholder="📝 عنوان الدرس">
+
+
+<textarea
+    id="description"
+    placeholder="📄 وصف الدرس"></textarea>
+
+
+<label>
+📎 اختر أي ملف
+</label>
+
+<input
+    id="file"
+    type="file">
+
+
+<button onclick="addLesson()">
+    ⬆️ إضافة الدرس
+</button>
+
+
+<hr>
+
+
+<h2>📚 الدروس الحالية</h2>
+
+<div id="lessons"></div>
+
+</div>
+
+</div>
+
+
+<script>
+
+let adminToken = "";
+
+
+/* تسجيل الدخول */
+
+async function login() {
+
+    const password =
+        document.getElementById("password").value;
+
+    if (!password) {
+
+        alert("⚠️ اكتب كلمة المرور");
+
+        return;
+    }
+
+    try {
+
+        const response =
+            await fetch("/api/login", {
+
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+                    password: password
+                })
+
+            });
+
+        const data =
+            await response.json();
+
+        if (response.ok) {
+
+            adminToken = data.token;
+
+            document.getElementById("login")
+                .style.display = "none";
+
+            document.getElementById("panel")
+                .style.display = "block";
+
+            loadLessons();
+
+            updateOnline();
+
+        } else {
+
+            alert("❌ " + data.message);
+
+        }
+
+    } catch (error) {
+
+        alert(
+            "❌ تأكد أن server.js يعمل"
+        );
+
+    }
+
+}
+
+
+/* إضافة درس */
+
+async function addLesson() {
+
+    const subject =
+        document.getElementById("subject").value;
+
+    const title =
+        document.getElementById("title").value;
+
+    const description =
+        document.getElementById("description").value;
+
+    const file =
+        document.getElementById("file").files[0];
+
+
+    if (!subject) {
+
+        alert("⚠️ اختر المادة");
+
+        return;
+    }
+
+
+    if (!title) {
+
+        alert("⚠️ اكتب عنوان الدرس");
+
+        return;
+    }
+
+
+    const formData =
+        new FormData();
+
+    formData.append(
+        "subject",
+        subject
+    );
+
+    formData.append(
+        "title",
+        title
+    );
+
+    formData.append(
+        "description",
+        description
+    );
+
+
+    if (file) {
+
+        formData.append(
+            "file",
+            file
+        );
+
+    }
+
+
+    const response =
+        await fetch(
+            "/api/lessons",
+            {
+
+                method: "POST",
+
+                headers: {
+                    "Authorization":
+                        "Bearer " + adminToken
+                },
+
+                body: formData
+
+            }
+        );
+
+
+    if (response.ok) {
+
+        alert("✅ تم إضافة الدرس");
+
+        document.getElementById("subject").value = "";
+
+        document.getElementById("title").value = "";
+
+        document.getElementById("description").value = "";
+
+        document.getElementById("file").value = "";
+
+        loadLessons();
+
+    } else {
+
+        alert("❌ لم تتم إضافة الدرس");
+
+    }
+
+}
+
+
+/* عرض الدروس */
+
+async function loadLessons() {
+
+    const response =
+        await fetch("/api/lessons");
+
+    const lessons =
+        await response.json();
+
+    const container =
+        document.getElementById("lessons");
+
+
+    if (lessons.length === 0) {
+
+        container.innerHTML =
+            "<p>لا توجد دروس.</p>";
+
+        return;
+    }
+
+
+    container.innerHTML =
+        lessons.map(
+            lesson => `
+
+            <div class="lesson">
+
+                <h3>
+                    📖 ${lesson.title}
+                </h3>
+
+                <p>
+                    📚 ${lesson.subject}
+                </p>
+
+                <p>
+                    ${lesson.description || ""}
+                </p>
+
+                ${
+                    lesson.file
+                    ?
+                    `
+                    <a
+                        class="file"
+                        href="${lesson.file}"
+                        target="_blank">
+
+                        📎 ${lesson.originalFileName}
+
+                    </a>
+                    `
+                    :
+                    ""
+                }
+
+                <button
+                    class="delete"
+                    onclick="deleteLesson(${lesson.id})">
+
+                    🗑️ حذف الدرس
+
+                </button>
+
+            </div>
+
+            `
+        ).join("");
+
+}
+
+
+/* حذف درس */
+
+async function deleteLesson(id) {
+
+    const confirmDelete =
+        confirm(
+            "هل أنت متأكد من حذف هذا الدرس؟"
+        );
+
+    if (!confirmDelete) {
+        return;
+    }
+
+
+    const response =
+        await fetch(
+            "/api/lessons/" + id,
+            {
+
+                method: "DELETE",
+
+                headers: {
+                    "Authorization":
+                        "Bearer " + adminToken
+                }
+
+            }
+        );
+
+
+    if (response.ok) {
+
+        alert("✅ تم حذف الدرس");
+
+        loadLessons();
+
+    } else {
+
+        alert("❌ لم يتم الحذف");
+
+    }
+
+}
+
+
+/* عدد المستخدمين */
+
+async function updateOnline() {
+
+    try {
+
+        const response =
+            await fetch("/api/online");
+
+        const data =
+            await response.json();
+
+        document.getElementById(
+            "onlineCount"
+        ).textContent = data.count;
+
+    } catch (error) {}
+
+}
+
+
+setInterval(
+    updateOnline,
+    5000
+);
+
+</script>
+<script>
+
+const userId =
+    localStorage.getItem("darbUserId") ||
+    "user-" + Date.now();
+
+localStorage.setItem(
+    "darbUserId",
+    userId
+);
+
+async function heartbeat() {
+
+    await fetch("/api/online", {
+
+        method: "POST",
+
+        headers: {
+            "Content-Type": "application/json"
+        },
+
+        body: JSON.stringify({
+            userId: userId
+        })
+
+    });
+
+}
+
+async function updateOnline() {
+
+    const response =
+        await fetch("/api/online");
+
+    const data =
+        await response.json();
+
+    document.getElementById(
+        "onlineCount"
+    ).textContent = data.count;
+
+}
+
+heartbeat();
+
+setInterval(
+    heartbeat,
+    10000
+);
+
+updateOnline();
+
+setInterval(
+    updateOnline,
+    5000
+);
+
+</script>
+</body>
+
+</html>
