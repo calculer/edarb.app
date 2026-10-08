@@ -1,3 +1,4 @@
+
 const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
@@ -6,67 +7,122 @@ const multer = require("multer");
 const jwt = require("jsonwebtoken");
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-// ==============================
-// إعدادات
-// ==============================
+// في Render، اربط قرصًا دائمًا على /var/data
+// ثم أضف متغير البيئة DATA_DIR=/var/data
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
+const LESSONS_FILE = path.join(DATA_DIR, "lessons.json");
 
-const ADMIN_PASSWORD = "123456";
-const JWT_SECRET = "darb-secret-2026";
+const ADMIN_PASSWORD =
+    process.env.ADMIN_PASSWORD ||
+    (process.env.NODE_ENV !== "production" ? "123456" : "");
+
+const JWT_SECRET =
+    process.env.JWT_SECRET ||
+    (process.env.NODE_ENV !== "production"
+        ? "local-development-secret-change-me"
+        : "");
+
+if (!ADMIN_PASSWORD || !JWT_SECRET) {
+    console.error(
+        "Set ADMIN_PASSWORD and JWT_SECRET environment variables."
+    );
+    process.exit(1);
+}
+
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+if (!fs.existsSync(LESSONS_FILE)) {
+    fs.writeFileSync(LESSONS_FILE, "[]", "utf8");
+}
 
 app.use(cors());
-app.use(express.json());
-app.use(express.static("public"));
+app.use(express.json({ limit: "1mb" }));
+app.use(express.static(path.join(__dirname, "public")));
+app.use("/uploads", express.static(UPLOADS_DIR));
 
-// ==============================
-// الملفات
-// ==============================
+function readLessons() {
+    const data = fs.readFileSync(LESSONS_FILE, "utf8");
+    const lessons = JSON.parse(data);
 
-if (!fs.existsSync("lessons.json")) {
-    fs.writeFileSync("lessons.json", "[]");
-}
-
-if (!fs.existsSync("uploads")) {
-    fs.mkdirSync("uploads");
-}
-
-// ==============================
-// رفع الملفات
-// ==============================
-
-const storage = multer.diskStorage({
-
-    destination: function (req, file, cb) {
-        cb(null, "uploads/");
-    },
-
-    filename: function (req, file, cb) {
-
-        const safeName =
-            file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-
-        const filename =
-            Date.now() + "-" + safeName;
-
-        cb(null, filename);
+    if (!Array.isArray(lessons)) {
+        throw new Error("lessons.json must contain an array");
     }
 
+    return lessons;
+}
+
+function saveLessons(lessons) {
+    fs.writeFileSync(
+        LESSONS_FILE,
+        JSON.stringify(lessons, null, 2),
+        "utf8"
+    );
+}
+
+function adminOnly(req, res, next) {
+    const authHeader = req.headers.authorization || "";
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+
+    if (!match) {
+        return res.status(401).json({
+            message: "غير مصرح"
+        });
+    }
+
+    try {
+        const decoded = jwt.verify(match[1], JWT_SECRET);
+
+        if (decoded.role !== "admin") {
+            return res.status(403).json({
+                message: "ممنوع"
+            });
+        }
+
+        next();
+    } catch (error) {
+        return res.status(401).json({
+            message: "جلسة الإدارة غير صالحة"
+        });
+    }
+}
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, UPLOADS_DIR);
+    },
+
+    filename: (req, file, cb) => {
+        const safeName = path
+            .basename(file.originalname)
+            .replace(/[^a-zA-Z0-9._-]/g, "_");
+
+        cb(null, Date.now() + "-" + safeName);
+    }
 });
 
 const upload = multer({
-    storage: storage
+    storage,
+    limits: {
+        fileSize: 50 * 1024 * 1024
+    }
 });
 
-// ==============================
-// المستخدمون النشطون
-// ==============================
+// اختبار حالة الخادم
+app.get("/api/health", (req, res) => {
+    res.json({
+        success: true,
+        message: "Darb server is running"
+    });
+});
 
+// المستخدمون النشطون
 const activeUsers = new Map();
 
 app.post("/api/online", (req, res) => {
-
-    const userId = req.body.userId;
+    const userId = req.body?.userId;
 
     if (!userId) {
         return res.status(400).json({
@@ -74,7 +130,7 @@ app.post("/api/online", (req, res) => {
         });
     }
 
-    activeUsers.set(userId, Date.now());
+    activeUsers.set(String(userId), Date.now());
 
     res.json({
         success: true,
@@ -82,311 +138,177 @@ app.post("/api/online", (req, res) => {
     });
 });
 
-// تنظيف المستخدمين الذين لم يرسلوا إشارة منذ 30 ثانية
-setInterval(() => {
-
-    const now = Date.now();
-
-    for (const [id, lastSeen] of activeUsers) {
-
-        if (now - lastSeen > 30000) {
-            activeUsers.delete(id);
-        }
-
-    }
-
-}, 10000);
-
-// عدد المستخدمين النشطين
 app.get("/api/online", (req, res) => {
-
     res.json({
         count: activeUsers.size
     });
-
 });
 
-// ==============================
-// تسجيل الدخول
-// ==============================
+setInterval(() => {
+    const now = Date.now();
 
+    for (const [id, lastSeen] of activeUsers) {
+        if (now - lastSeen > 30000) {
+            activeUsers.delete(id);
+        }
+    }
+}, 10000);
+
+// تسجيل دخول الإدارة
 app.post("/api/login", (req, res) => {
+    const { password } = req.body || {};
 
-    const { password } = req.body;
-
-    if (password !== ADMIN_PASSWORD) {
-
+    if (
+        typeof password !== "string" ||
+        password !== ADMIN_PASSWORD
+    ) {
         return res.status(401).json({
             success: false,
             message: "كلمة المرور خاطئة"
         });
-
     }
 
     const token = jwt.sign(
-        {
-            role: "admin"
-        },
+        { role: "admin" },
         JWT_SECRET,
-        {
-            expiresIn: "8h"
-        }
+        { expiresIn: "8h" }
     );
 
     res.json({
         success: true,
-        token: token
+        token
     });
-
 });
 
-// ==============================
-// حماية الإدارة
-// ==============================
-
-function adminOnly(req, res, next) {
-
-    const authHeader =
-        req.headers.authorization;
-
-    if (!authHeader) {
-
-        return res.status(401).json({
-            message: "غير مصرح"
-        });
-
-    }
-
-    const token =
-        authHeader.replace("Bearer ", "");
-
+// جميع الدروس
+app.get("/api/lessons", (req, res, next) => {
     try {
-
-        const decoded =
-            jwt.verify(token, JWT_SECRET);
-
-        if (decoded.role !== "admin") {
-
-            return res.status(403).json({
-                message: "ممنوع"
-            });
-
-        }
-
-        next();
-
+        res.json(readLessons());
     } catch (error) {
-
-        return res.status(401).json({
-            message: "جلسة الإدارة غير صالحة"
-        });
-
+        next(error);
     }
-
-}
-
-// ==============================
-// الحصول على جميع الدروس
-// ==============================
-
-app.get("/api/lessons", (req, res) => {
-
-    const lessons =
-        JSON.parse(
-            fs.readFileSync("lessons.json", "utf8")
-        );
-
-    res.json(lessons);
-
 });
 
-// ==============================
-// الحصول على دروس مادة معينة
-// ==============================
+// دروس مادة معينة
+app.get("/api/lessons/:subject", (req, res, next) => {
+    try {
+        const subject = req.params.subject;
+        const lessons = readLessons();
 
-app.get("/api/lessons/:subject", (req, res) => {
-
-    const subject =
-        decodeURIComponent(req.params.subject);
-
-    const lessons =
-        JSON.parse(
-            fs.readFileSync("lessons.json", "utf8")
+        res.json(
+            lessons.filter(lesson => lesson.subject === subject)
         );
-
-    const filtered =
-        lessons.filter(
-            lesson => lesson.subject === subject
-        );
-
-    res.json(filtered);
-
+    } catch (error) {
+        next(error);
+    }
 });
 
-// ==============================
 // إضافة درس
-// ==============================
-
 app.post(
     "/api/lessons",
     adminOnly,
     upload.single("file"),
-    (req, res) => {
+    (req, res, next) => {
+        try {
+            const { subject, title, description } = req.body;
 
-        const {
-            subject,
-            title,
-            description
-        } = req.body;
+            if (!subject || !title) {
+                if (req.file) {
+                    fs.unlinkSync(req.file.path);
+                }
 
-        if (!subject) {
+                return res.status(400).json({
+                    message: "المادة وعنوان الدرس مطلوبان"
+                });
+            }
 
-            return res.status(400).json({
-                message: "المادة مطلوبة"
-            });
+            const lessons = readLessons();
 
-        }
-
-        if (!title) {
-
-            return res.status(400).json({
-                message: "عنوان الدرس مطلوب"
-            });
-
-        }
-
-        const lessons =
-            JSON.parse(
-                fs.readFileSync("lessons.json", "utf8")
-            );
-
-        const lesson = {
-
-            id: Date.now(),
-
-            subject: subject,
-
-            title: title,
-
-            description:
-                description || "",
-
-            file:
-                req.file
+            const lesson = {
+                id: Date.now(),
+                subject,
+                title,
+                description: description || "",
+                file: req.file
                     ? "/uploads/" + req.file.filename
                     : null,
-
-            originalFileName:
-                req.file
+                originalFileName: req.file
                     ? req.file.originalname
                     : null,
+                createdAt: new Date().toISOString()
+            };
 
-            createdAt:
-                new Date().toISOString()
+            lessons.push(lesson);
+            saveLessons(lessons);
 
-        };
-
-        lessons.push(lesson);
-
-        fs.writeFileSync(
-            "lessons.json",
-            JSON.stringify(lessons, null, 2)
-        );
-
-        res.json({
-            success: true,
-            lesson: lesson
-        });
-
+            res.status(201).json({
+                success: true,
+                lesson
+            });
+        } catch (error) {
+            next(error);
+        }
     }
 );
 
-// ==============================
 // حذف درس
-// ==============================
-
-app.delete(
-    "/api/lessons/:id",
-    adminOnly,
-    (req, res) => {
-
-        const id =
-            Number(req.params.id);
-
-        const lessons =
-            JSON.parse(
-                fs.readFileSync("lessons.json", "utf8")
-            );
-
-        const lesson =
-            lessons.find(
-                item => item.id === id
-            );
+app.delete("/api/lessons/:id", adminOnly, (req, res, next) => {
+    try {
+        const id = Number(req.params.id);
+        const lessons = readLessons();
+        const lesson = lessons.find(item => item.id === id);
 
         if (!lesson) {
-
             return res.status(404).json({
                 message: "الدرس غير موجود"
             });
-
         }
 
-        // حذف الملف من uploads
+        const updatedLessons = lessons.filter(
+            item => item.id !== id
+        );
+
+        saveLessons(updatedLessons);
+
         if (lesson.file) {
-
-            const filename =
-                path.basename(lesson.file);
-
-            const filePath =
-                path.join(
-                    __dirname,
-                    "uploads",
-                    filename
-                );
+            const filename = path.basename(lesson.file);
+            const filePath = path.join(UPLOADS_DIR, filename);
 
             if (fs.existsSync(filePath)) {
                 fs.unlinkSync(filePath);
             }
-
         }
-
-        const newLessons =
-            lessons.filter(
-                item => item.id !== id
-            );
-
-        fs.writeFileSync(
-            "lessons.json",
-            JSON.stringify(newLessons, null, 2)
-        );
 
         res.json({
             success: true,
             message: "تم حذف الدرس"
         });
-
+    } catch (error) {
+        next(error);
     }
-);
+});
 
-// ==============================
-// الملفات
-// ==============================
+// التعامل مع أخطاء الملفات والطلبات
+app.use((err, req, res, next) => {
+    console.error(err);
 
-app.use(
-    "/uploads",
-    express.static(
-        path.join(__dirname, "uploads")
-    )
-);
+    if (res.headersSent) {
+        return next(err);
+    }
 
-// ==============================
-// تشغيل السيرفر
-// ==============================
+    if (err instanceof multer.MulterError) {
+        return res.status(400).json({
+            message: err.code === "LIMIT_FILE_SIZE"
+                ? "حجم الملف أكبر من 50 ميغابايت"
+                : "تعذر رفع الملف"
+        });
+    }
 
-app.listen(PORT, () => {
+    res.status(500).json({
+        message: "حدث خطأ داخلي في الخادم"
+    });
+});
 
-    console.log(
-        `Darb running on http://localhost:${PORT}`
-    );
-
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Darb server running on port ${PORT}`);
 });
