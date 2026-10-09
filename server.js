@@ -290,6 +290,14 @@ app.use((err, req, res, next) => {
 initializeSupabase().then(() => {
     app.listen(PORT, "0.0.0.0", () => console.log(`Darb server running on port ${PORT}`));
 }).catch(error => {
-    console.error("Could not initialize Supabase. Check the table, bucket, and server environment variables.", error?.name || "Error");
+    const safeMessage = typeof error?.message === "string"
+        ? error.message.replaceAll(supabaseKey || "\u0000", "[redacted]").slice(0, 300)
+        : "Unknown startup error";
+    console.error("Could not initialize Supabase.", {
+        name: error?.name || "Error",
+        code: error?.code || null,
+        status: error?.status || null,
+        message: safeMessage
+    });
     process.exit(1);
 });
