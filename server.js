@@ -1,4 +1,3 @@
-
 const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
@@ -6,168 +5,125 @@ const path = require("path");
 const multer = require("multer");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// في Render، اربط قرصًا دائمًا على /var/data
-// ثم أضف متغير البيئة DATA_DIR=/var/data
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 const LESSONS_FILE = path.join(DATA_DIR, "lessons.json");
 const CONTENT_FILE = path.join(DATA_DIR, "content.json");
-const R2_ENV = ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME"];
-const configuredR2 = R2_ENV.filter(name => Boolean(process.env[name]));
-if (configuredR2.length > 0 && configuredR2.length !== R2_ENV.length) {
-    throw new Error("R2 configuration is incomplete. Set all R2 environment variables or none.");
-}
-const R2_ENABLED = configuredR2.length === R2_ENV.length;
-const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
-const r2 = R2_ENABLED ? new S3Client({
-    region: "auto",
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
-    }
-}) : null;
+const TABLE = "darb_records";
+const BUCKET = process.env.SUPABASE_BUCKET || "darb-files";
 const CONTENT_TYPES = new Set(["summary", "exercise", "quiz", "exam", "resource"]);
-const CONTENT_LABELS = {
-    summary: "ملخص",
-    exercise: "تمرين",
-    quiz: "سؤال أو اختبار",
-    exam: "امتحان سابق",
-    resource: "ملف أو مورد"
-};
 
-const ADMIN_PASSWORD =
-    process.env.ADMIN_PASSWORD ||
-    (process.env.NODE_ENV !== "production" ? "123456" : "");
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (Boolean(supabaseUrl) !== Boolean(supabaseKey)) {
+    throw new Error("Set SUPABASE_URL and SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY), or neither.");
+}
+const SUPABASE_ENABLED = Boolean(supabaseUrl && supabaseKey);
+const supabase = SUPABASE_ENABLED
+    ? createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } })
+    : null;
 
-const JWT_SECRET =
-    process.env.JWT_SECRET ||
-    (process.env.NODE_ENV !== "production"
-        ? "local-development-secret-change-me"
-        : "");
-
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV !== "production" ? "123456" : "");
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV !== "production" ? "local-development-secret-change-me" : "");
 if (!ADMIN_PASSWORD || !JWT_SECRET) {
-    console.error(
-        "Set ADMIN_PASSWORD and JWT_SECRET environment variables."
-    );
+    console.error("Set ADMIN_PASSWORD and JWT_SECRET environment variables.");
     process.exit(1);
 }
 
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-
-// Seed a newly attached Render disk once, preserving lessons and uploads already in Git.
-if (path.resolve(DATA_DIR) !== path.resolve(__dirname)) {
-    const seedMarker = path.join(DATA_DIR, ".darb-seeded");
-    if (!fs.existsSync(seedMarker)) {
-        for (const filename of ["lessons.json", "content.json"]) {
-            const destination = path.join(DATA_DIR, filename);
-            const source = path.join(__dirname, filename);
-            if (!fs.existsSync(destination)) fs.copyFileSync(source, destination);
-        }
-        const sourceUploads = path.join(__dirname, "uploads");
-        if (fs.existsSync(sourceUploads)) {
-            for (const filename of fs.readdirSync(sourceUploads)) {
-                const source = path.join(sourceUploads, filename);
-                const destination = path.join(UPLOADS_DIR, filename);
-                if (fs.statSync(source).isFile() && !fs.existsSync(destination)) {
-                    fs.copyFileSync(source, destination);
-                }
-            }
-        }
-        fs.writeFileSync(seedMarker, new Date().toISOString(), "utf8");
-    }
-}
-
 if (!fs.existsSync(LESSONS_FILE)) fs.writeFileSync(LESSONS_FILE, "[]", "utf8");
 if (!fs.existsSync(CONTENT_FILE)) fs.writeFileSync(CONTENT_FILE, "[]", "utf8");
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
+// Retain access to old locally stored files while old links still exist.
 app.use("/uploads", express.static(UPLOADS_DIR));
 app.get("/files", async (req, res, next) => {
-    if (!R2_ENABLED) return res.status(404).end();
     try {
         const key = typeof req.query.key === "string" ? req.query.key : "";
-        if (!key.startsWith("uploads/") || key.split("/").some(part => !part || part === "." || part === "..")) {
-            return res.status(400).end();
+        if (!SUPABASE_ENABLED || !key.startsWith("uploads/") || key.split("/").some(part => !part || part === "." || part === "..")) {
+            return res.status(404).end();
         }
-        const result = await r2.send(new GetObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }));
-        res.setHeader("X-Content-Type-Options", "nosniff");
-        const contentType = result.ContentType || "application/octet-stream";
-        const inlineTypes = new Set(["application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp"]);
-        res.setHeader("Content-Type", contentType);
-        res.setHeader("Content-Disposition", inlineTypes.has(contentType) ? "inline" : "attachment");
-        res.setHeader("Cache-Control", "public, max-age=3600");
-        if (result.ContentLength != null) res.setHeader("Content-Length", result.ContentLength);
-        result.Body.pipe(res);
-    } catch (error) {
-        if (error.name === "NoSuchKey" || error.name === "NotFound") return res.status(404).end();
-        next(error);
-    }
+        const [lessons, content] = await Promise.all([readCollection("lesson"), readCollection("content")]);
+        if (![...lessons, ...content].some(item => item.storageProvider === "supabase" && item.storageKey === key)) {
+            return res.status(404).end();
+        }
+        const result = checkSupabase(await supabase.storage.from(BUCKET).createSignedUrl(key, 60, { download: false }));
+        res.setHeader("Cache-Control", "no-store");
+        res.redirect(302, result.signedUrl);
+    } catch (error) { next(error); }
 });
 
-function readLessons() {
-    const data = fs.readFileSync(LESSONS_FILE, "utf8");
-    const lessons = JSON.parse(data);
+function readLocal(filename) {
+    const value = JSON.parse(fs.readFileSync(filename, "utf8"));
+    if (!Array.isArray(value)) throw new Error(`${path.basename(filename)} must contain an array`);
+    return value;
+}
 
-    if (!Array.isArray(lessons)) {
-        throw new Error("lessons.json must contain an array");
+function writeLocal(filename, items) {
+    fs.writeFileSync(filename, JSON.stringify(items, null, 2), "utf8");
+}
+
+function checkSupabase(result) {
+    if (result.error) throw result.error;
+    return result.data;
+}
+
+async function readCollection(collection) {
+    if (!SUPABASE_ENABLED) return readLocal(collection === "lesson" ? LESSONS_FILE : CONTENT_FILE);
+    const data = checkSupabase(await supabase.from(TABLE).select("payload").eq("collection", collection).order("created_at", { ascending: true }));
+    return data.map(row => row.payload);
+}
+
+async function addRecord(collection, item) {
+    if (!SUPABASE_ENABLED) {
+        const filename = collection === "lesson" ? LESSONS_FILE : CONTENT_FILE;
+        const items = readLocal(filename);
+        items.push(item);
+        writeLocal(filename, items);
+        return;
     }
-
-    return lessons;
+    checkSupabase(await supabase.from(TABLE).insert({ collection, id: String(item.id), payload: item }));
 }
 
-function saveLessons(lessons) {
-    fs.writeFileSync(
-        LESSONS_FILE,
-        JSON.stringify(lessons, null, 2),
-        "utf8"
-    );
+async function deleteRecord(collection, item) {
+    if (!SUPABASE_ENABLED) {
+        const filename = collection === "lesson" ? LESSONS_FILE : CONTENT_FILE;
+        writeLocal(filename, readLocal(filename).filter(entry => String(entry.id) !== String(item.id)));
+        return;
+    }
+    checkSupabase(await supabase.from(TABLE).delete().eq("collection", collection).eq("id", String(item.id)));
 }
 
-function readContent() {
-    const content = JSON.parse(fs.readFileSync(CONTENT_FILE, "utf8"));
-    if (!Array.isArray(content)) throw new Error("content.json must contain an array");
-    return content;
-}
-
-function saveContent(content) {
-    fs.writeFileSync(CONTENT_FILE, JSON.stringify(content, null, 2), "utf8");
+function safeFilename(originalname) {
+    return path.basename(originalname).replace(/[^a-zA-Z0-9._-]/g, "_").slice(-160) || "file";
 }
 
 async function storeUploadedFile(file) {
     if (!file) return null;
-    if (!R2_ENABLED) {
-        const filename = `${Date.now()}-${crypto.randomUUID()}-${path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-        const filePath = path.join(UPLOADS_DIR, filename);
-        fs.writeFileSync(filePath, file.buffer, { flag: "wx" });
-        return { file: `/uploads/${filename}`, storageKey: null };
+    const safeName = safeFilename(file.originalname);
+    if (!SUPABASE_ENABLED) {
+        const filename = `${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+        fs.writeFileSync(path.join(UPLOADS_DIR, filename), file.buffer, { flag: "wx" });
+        return { file: `/uploads/${filename}`, storageKey: null, storageProvider: "local" };
     }
-    const safeName = path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, "_").slice(-180) || "file";
     const key = `uploads/${crypto.randomUUID()}-${safeName}`;
-    await r2.send(new PutObjectCommand({
-        Bucket: R2_BUCKET_NAME,
-        Key: key,
-        Body: file.buffer,
-        ContentLength: file.size,
-        ContentType: file.mimetype || "application/octet-stream"
+    checkSupabase(await supabase.storage.from(BUCKET).upload(key, file.buffer, {
+        contentType: file.mimetype || "application/octet-stream",
+        upsert: false
     }));
-    return { file: `/files?key=${encodeURIComponent(key)}`, storageKey: key };
+    return { file: `/files?key=${encodeURIComponent(key)}`, storageKey: key, storageProvider: "supabase" };
 }
 
 async function removeUploadedFile(item) {
     if (!item?.file) return;
-    const key = item.storageKey || (item.file.startsWith("/files/")
-        ? decodeURIComponent(item.file.slice("/files/".length))
-        : null);
-    if (key && R2_ENABLED) {
-        await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }));
+    if (item.storageProvider === "supabase" && item.storageKey && SUPABASE_ENABLED) {
+        checkSupabase(await supabase.storage.from(BUCKET).remove([item.storageKey]));
         return;
     }
     if (item.file.startsWith("/uploads/")) {
@@ -177,272 +133,163 @@ async function removeUploadedFile(item) {
     }
 }
 
-async function discardUploadedFile(stored) {
-    if (!stored) return;
-    await removeUploadedFile(stored);
+async function initializeSupabase() {
+    if (!SUPABASE_ENABLED) {
+        console.warn("Supabase is not configured; using local JSON and uploads (not persistent on Render Free).");
+        return;
+    }
+    const markerId = "json-seed-v1";
+    const marker = checkSupabase(await supabase.from(TABLE).select("id").eq("collection", "migration").eq("id", markerId).maybeSingle());
+    if (!marker) {
+        for (const [collection, filename] of [["lesson", LESSONS_FILE], ["content", CONTENT_FILE]]) {
+            for (const item of readLocal(filename)) {
+                checkSupabase(await supabase.from(TABLE).upsert({ collection, id: String(item.id), payload: item }, { onConflict: "collection,id", ignoreDuplicates: true }));
+            }
+        }
+        checkSupabase(await supabase.from(TABLE).insert({ collection: "migration", id: markerId, payload: { completedAt: new Date().toISOString() } }));
+    }
+
+    // Move available legacy local files into the permanent bucket and update their records.
+    for (const collection of ["lesson", "content"]) {
+        const rows = checkSupabase(await supabase.from(TABLE).select("id,payload").eq("collection", collection));
+        for (const row of rows) {
+            const item = row.payload;
+            if (!item.file?.startsWith("/uploads/") || item.storageProvider === "supabase") continue;
+            const localPath = path.join(UPLOADS_DIR, path.basename(item.file));
+            if (!fs.existsSync(localPath)) continue;
+            const buffer = fs.readFileSync(localPath);
+            const key = `uploads/${crypto.randomUUID()}-${safeFilename(item.originalFileName || path.basename(localPath))}`;
+            checkSupabase(await supabase.storage.from(BUCKET).upload(key, buffer, { contentType: "application/octet-stream", upsert: false }));
+            item.file = `/files?key=${encodeURIComponent(key)}`;
+            item.storageKey = key;
+            item.storageProvider = "supabase";
+            checkSupabase(await supabase.from(TABLE).update({ payload: item }).eq("collection", collection).eq("id", row.id));
+        }
+    }
+    console.log("Supabase storage and database are ready.");
 }
 
 function adminOnly(req, res, next) {
-    const authHeader = req.headers.authorization || "";
-    const match = authHeader.match(/^Bearer\s+(.+)$/i);
-
-    if (!match) {
-        return res.status(401).json({
-            message: "غير مصرح"
-        });
-    }
-
+    const match = (req.headers.authorization || "").match(/^Bearer\s+(.+)$/i);
+    if (!match) return res.status(401).json({ message: "غير مصرح" });
     try {
         const decoded = jwt.verify(match[1], JWT_SECRET);
-
-        if (decoded.role !== "admin") {
-            return res.status(403).json({
-                message: "ممنوع"
-            });
-        }
-
+        if (decoded.role !== "admin") return res.status(403).json({ message: "ممنوع" });
         next();
-    } catch (error) {
-        return res.status(401).json({
-            message: "جلسة الإدارة غير صالحة"
-        });
+    } catch {
+        return res.status(401).json({ message: "جلسة الإدارة غير صالحة" });
     }
 }
 
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 50 * 1024 * 1024 }
-});
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+app.get("/api/health", (req, res) => res.json({ success: true, message: "Darb server is running", storage: SUPABASE_ENABLED ? "supabase" : "local" }));
 
-// اختبار حالة الخادم
-app.get("/api/health", (req, res) => {
-    res.json({
-        success: true,
-        message: "Darb server is running"
-    });
-});
-
-// المستخدمون النشطون
 const activeUsers = new Map();
-
 app.post("/api/online", (req, res) => {
     const userId = req.body?.userId;
-
-    if (!userId) {
-        return res.status(400).json({
-            message: "userId مطلوب"
-        });
-    }
-
+    if (!userId) return res.status(400).json({ message: "userId مطلوب" });
     activeUsers.set(String(userId), Date.now());
-
-    res.json({
-        success: true,
-        count: activeUsers.size
-    });
+    res.json({ success: true, count: activeUsers.size });
 });
-
-app.get("/api/online", (req, res) => {
-    res.json({
-        count: activeUsers.size
-    });
-});
-
+app.get("/api/online", (req, res) => res.json({ count: activeUsers.size }));
 setInterval(() => {
     const now = Date.now();
+    for (const [id, lastSeen] of activeUsers) if (now - lastSeen > 30000) activeUsers.delete(id);
+}, 10000).unref();
 
-    for (const [id, lastSeen] of activeUsers) {
-        if (now - lastSeen > 30000) {
-            activeUsers.delete(id);
-        }
-    }
-}, 10000);
-
-// تسجيل دخول الإدارة
 app.post("/api/login", (req, res) => {
     const { password } = req.body || {};
-
-    if (
-        typeof password !== "string" ||
-        password !== ADMIN_PASSWORD
-    ) {
-        return res.status(401).json({
-            success: false,
-            message: "كلمة المرور خاطئة"
-        });
-    }
-
-    const token = jwt.sign(
-        { role: "admin" },
-        JWT_SECRET,
-        { expiresIn: "8h" }
-    );
-
-    res.json({
-        success: true,
-        token
-    });
+    if (typeof password !== "string" || password !== ADMIN_PASSWORD) return res.status(401).json({ success: false, message: "كلمة المرور خاطئة" });
+    res.json({ success: true, token: jwt.sign({ role: "admin" }, JWT_SECRET, { expiresIn: "8h" }) });
 });
 
-// جميع الدروس
-app.get("/api/lessons", (req, res, next) => {
+app.get("/api/lessons", async (req, res, next) => {
+    try { res.json(await readCollection("lesson")); } catch (error) { next(error); }
+});
+app.get("/api/lessons/:subject", async (req, res, next) => {
+    try { res.json((await readCollection("lesson")).filter(item => item.subject === req.params.subject)); } catch (error) { next(error); }
+});
+app.post("/api/lessons", adminOnly, upload.single("file"), async (req, res, next) => {
+    let stored = null;
     try {
-        res.json(readLessons());
+        const { subject, title, description } = req.body;
+        if (!subject || !title) return res.status(400).json({ message: "المادة وعنوان الدرس مطلوبان" });
+        stored = await storeUploadedFile(req.file);
+        const lesson = {
+            id: Date.now(), subject, title, description: description || "",
+            file: stored?.file || null, storageKey: stored?.storageKey || null,
+            storageProvider: stored?.storageProvider || null,
+            originalFileName: req.file ? req.file.originalname : null,
+            createdAt: new Date().toISOString()
+        };
+        await addRecord("lesson", lesson);
+        res.status(201).json({ success: true, lesson });
     } catch (error) {
-        next(error);
-    }
-});
-
-// دروس مادة معينة
-app.get("/api/lessons/:subject", (req, res, next) => {
-    try {
-        const subject = req.params.subject;
-        const lessons = readLessons();
-
-        res.json(
-            lessons.filter(lesson => lesson.subject === subject)
-        );
-    } catch (error) {
-        next(error);
-    }
-});
-
-// إضافة درس
-app.post(
-    "/api/lessons",
-    adminOnly,
-    upload.single("file"),
-    async (req, res, next) => {
-        let stored = null;
-        try {
-            const { subject, title, description } = req.body;
-
-            if (!subject || !title) {
-                return res.status(400).json({
-                    message: "المادة وعنوان الدرس مطلوبان"
-                });
-            }
-
-            const lessons = readLessons();
-
-            stored = await storeUploadedFile(req.file);
-            const lesson = {
-                id: Date.now(), subject, title, description: description || "",
-                file: stored?.file || null, storageKey: stored?.storageKey || null,
-                originalFileName: req.file ? req.file.originalname : null,
-                createdAt: new Date().toISOString()
-            };
-
-            lessons.push(lesson);
-            saveLessons(lessons);
-
-            res.status(201).json({
-                success: true,
-                lesson
-            });
-        } catch (error) {
-            try { await discardUploadedFile(stored); } catch (cleanupError) { console.error("Upload cleanup failed"); }
-            next(error);
+        if (stored?.storageProvider === "supabase" && stored.storageKey) {
+            try { await supabase.storage.from(BUCKET).remove([stored.storageKey]); } catch { console.error("Upload cleanup failed"); }
         }
+        next(error);
     }
-);
-
-// حذف درس
+});
 app.delete("/api/lessons/:id", adminOnly, async (req, res, next) => {
     try {
-        const id = Number(req.params.id);
-        const lessons = readLessons();
-        const lesson = lessons.find(item => item.id === id);
-
-        if (!lesson) {
-            return res.status(404).json({
-                message: "الدرس غير موجود"
-            });
-        }
-
-        const updatedLessons = lessons.filter(
-            item => item.id !== id
-        );
-
-        saveLessons(updatedLessons);
-
-        await removeUploadedFile(lesson);
-
-        res.json({
-            success: true,
-            message: "تم حذف الدرس"
-        });
-    } catch (error) {
-        next(error);
-    }
+        const lesson = (await readCollection("lesson")).find(item => String(item.id) === String(req.params.id));
+        if (!lesson) return res.status(404).json({ message: "الدرس غير موجود" });
+        await deleteRecord("lesson", lesson);
+        try { await removeUploadedFile(lesson); } catch (error) { console.error("Could not remove stored lesson file:", error?.name || "Error"); }
+        res.json({ success: true, message: "تم حذف الدرس" });
+    } catch (error) { next(error); }
 });
 
-// محتوى المواد: ملخصات وتمارين واختبارات وامتحانات وموارد
-app.get("/api/content", (req, res, next) => {
+app.get("/api/content", async (req, res, next) => {
     try {
         const { subject, type } = req.query;
-        if (type && !CONTENT_TYPES.has(type)) {
-            return res.status(400).json({ message: "نوع المحتوى غير صالح" });
-        }
-        const content = readContent().filter(item =>
-            (!subject || item.subject === subject) && (!type || item.type === type)
-        );
-        res.json(content);
-    } catch (error) {
-        next(error);
-    }
+        if (type && !CONTENT_TYPES.has(type)) return res.status(400).json({ message: "نوع المحتوى غير صالح" });
+        res.json((await readCollection("content")).filter(item => (!subject || item.subject === subject) && (!type || item.type === type)));
+    } catch (error) { next(error); }
 });
-
 app.post("/api/content", adminOnly, upload.single("file"), async (req, res, next) => {
     let stored = null;
     try {
         const { type, subject, title, description } = req.body;
-        if (!CONTENT_TYPES.has(type) || !subject || !title) {
-            return res.status(400).json({ message: "اختر نوع المحتوى والمادة واكتب العنوان" });
-        }
+        if (!CONTENT_TYPES.has(type) || !subject || !title) return res.status(400).json({ message: "اختر نوع المحتوى والمادة واكتب العنوان" });
         stored = await storeUploadedFile(req.file);
-        const content = readContent();
         const item = {
             id: Date.now(), type, subject, title, description: description || "",
             file: stored?.file || null, storageKey: stored?.storageKey || null,
+            storageProvider: stored?.storageProvider || null,
             originalFileName: req.file ? req.file.originalname : null,
             createdAt: new Date().toISOString()
         };
-        content.push(item);
-        saveContent(content);
+        await addRecord("content", item);
         res.status(201).json({ success: true, item });
     } catch (error) {
-        try { await discardUploadedFile(stored); } catch (cleanupError) { console.error("Upload cleanup failed"); }
+        if (stored?.storageProvider === "supabase" && stored.storageKey) {
+            try { await supabase.storage.from(BUCKET).remove([stored.storageKey]); } catch { console.error("Upload cleanup failed"); }
+        }
         next(error);
     }
 });
-
 app.delete("/api/content/:id", adminOnly, async (req, res, next) => {
     try {
-        const id = Number(req.params.id);
-        const content = readContent();
-        const item = content.find(entry => entry.id === id);
+        const item = (await readCollection("content")).find(entry => String(entry.id) === String(req.params.id));
         if (!item) return res.status(404).json({ message: "المحتوى غير موجود" });
-        saveContent(content.filter(entry => entry.id !== id));
-        await removeUploadedFile(item);
+        await deleteRecord("content", item);
+        try { await removeUploadedFile(item); } catch (error) { console.error("Could not remove stored content file:", error?.name || "Error"); }
         res.json({ success: true, message: "تم حذف المحتوى" });
-    } catch (error) {
-        next(error);
-    }
+    } catch (error) { next(error); }
 });
 
-// Error middleware must be registered after every route.
 app.use((err, req, res, next) => {
     console.error("Request failed:", err?.name || "Error");
     if (res.headersSent) return next(err);
-    if (err instanceof multer.MulterError) {
-        return res.status(400).json({
-            message: err.code === "LIMIT_FILE_SIZE" ? "حجم الملف أكبر من 50 ميغابايت" : "تعذر رفع الملف"
-        });
-    }
+    if (err instanceof multer.MulterError) return res.status(400).json({ message: err.code === "LIMIT_FILE_SIZE" ? "حجم الملف أكبر من 50 ميغابايت" : "تعذر رفع الملف" });
     res.status(500).json({ message: "حدث خطأ داخلي في الخادم" });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Darb server running on port ${PORT}`);
+initializeSupabase().then(() => {
+    app.listen(PORT, "0.0.0.0", () => console.log(`Darb server running on port ${PORT}`));
+}).catch(error => {
+    console.error("Could not initialize Supabase. Check the table, bucket, and server environment variables.", error?.name || "Error");
+    process.exit(1);
 });
