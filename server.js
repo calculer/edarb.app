@@ -5,6 +5,8 @@ const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,6 +17,21 @@ const DATA_DIR = process.env.DATA_DIR || __dirname;
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 const LESSONS_FILE = path.join(DATA_DIR, "lessons.json");
 const CONTENT_FILE = path.join(DATA_DIR, "content.json");
+const R2_ENV = ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME"];
+const configuredR2 = R2_ENV.filter(name => Boolean(process.env[name]));
+if (configuredR2.length > 0 && configuredR2.length !== R2_ENV.length) {
+    throw new Error("R2 configuration is incomplete. Set all R2 environment variables or none.");
+}
+const R2_ENABLED = configuredR2.length === R2_ENV.length;
+const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
+const r2 = R2_ENABLED ? new S3Client({
+    region: "auto",
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY
+    }
+}) : null;
 const CONTENT_TYPES = new Set(["summary", "exercise", "quiz", "exam", "resource"]);
 const CONTENT_LABELS = {
     summary: "ملخص",
@@ -73,6 +90,27 @@ app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(UPLOADS_DIR));
+app.get("/files", async (req, res, next) => {
+    if (!R2_ENABLED) return res.status(404).end();
+    try {
+        const key = typeof req.query.key === "string" ? req.query.key : "";
+        if (!key.startsWith("uploads/") || key.split("/").some(part => !part || part === "." || part === "..")) {
+            return res.status(400).end();
+        }
+        const result = await r2.send(new GetObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }));
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        const contentType = result.ContentType || "application/octet-stream";
+        const inlineTypes = new Set(["application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp"]);
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Content-Disposition", inlineTypes.has(contentType) ? "inline" : "attachment");
+        res.setHeader("Cache-Control", "public, max-age=3600");
+        if (result.ContentLength != null) res.setHeader("Content-Length", result.ContentLength);
+        result.Body.pipe(res);
+    } catch (error) {
+        if (error.name === "NoSuchKey" || error.name === "NotFound") return res.status(404).end();
+        next(error);
+    }
+});
 
 function readLessons() {
     const data = fs.readFileSync(LESSONS_FILE, "utf8");
@@ -103,11 +141,45 @@ function saveContent(content) {
     fs.writeFileSync(CONTENT_FILE, JSON.stringify(content, null, 2), "utf8");
 }
 
-function removeUploadedFile(item) {
+async function storeUploadedFile(file) {
+    if (!file) return null;
+    if (!R2_ENABLED) {
+        const filename = `${Date.now()}-${crypto.randomUUID()}-${path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+        const filePath = path.join(UPLOADS_DIR, filename);
+        fs.writeFileSync(filePath, file.buffer, { flag: "wx" });
+        return { file: `/uploads/${filename}`, storageKey: null };
+    }
+    const safeName = path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, "_").slice(-180) || "file";
+    const key = `uploads/${crypto.randomUUID()}-${safeName}`;
+    await r2.send(new PutObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: key,
+        Body: file.buffer,
+        ContentLength: file.size,
+        ContentType: file.mimetype || "application/octet-stream"
+    }));
+    return { file: `/files?key=${encodeURIComponent(key)}`, storageKey: key };
+}
+
+async function removeUploadedFile(item) {
     if (!item?.file) return;
-    const filename = path.basename(item.file);
-    const filePath = path.join(UPLOADS_DIR, filename);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    const key = item.storageKey || (item.file.startsWith("/files/")
+        ? decodeURIComponent(item.file.slice("/files/".length))
+        : null);
+    if (key && R2_ENABLED) {
+        await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: key }));
+        return;
+    }
+    if (item.file.startsWith("/uploads/")) {
+        const filename = path.basename(item.file);
+        const filePath = path.join(UPLOADS_DIR, filename);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+}
+
+async function discardUploadedFile(stored) {
+    if (!stored) return;
+    await removeUploadedFile(stored);
 }
 
 function adminOnly(req, res, next) {
@@ -137,25 +209,9 @@ function adminOnly(req, res, next) {
     }
 }
 
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, UPLOADS_DIR);
-    },
-
-    filename: (req, file, cb) => {
-        const safeName = path
-            .basename(file.originalname)
-            .replace(/[^a-zA-Z0-9._-]/g, "_");
-
-        cb(null, Date.now() + "-" + safeName);
-    }
-});
-
 const upload = multer({
-    storage,
-    limits: {
-        fileSize: 50 * 1024 * 1024
-    }
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 }
 });
 
 // اختبار حالة الخادم
@@ -256,15 +312,12 @@ app.post(
     "/api/lessons",
     adminOnly,
     upload.single("file"),
-    (req, res, next) => {
+    async (req, res, next) => {
+        let stored = null;
         try {
             const { subject, title, description } = req.body;
 
             if (!subject || !title) {
-                if (req.file) {
-                    fs.unlinkSync(req.file.path);
-                }
-
                 return res.status(400).json({
                     message: "المادة وعنوان الدرس مطلوبان"
                 });
@@ -272,17 +325,11 @@ app.post(
 
             const lessons = readLessons();
 
+            stored = await storeUploadedFile(req.file);
             const lesson = {
-                id: Date.now(),
-                subject,
-                title,
-                description: description || "",
-                file: req.file
-                    ? "/uploads/" + req.file.filename
-                    : null,
-                originalFileName: req.file
-                    ? req.file.originalname
-                    : null,
+                id: Date.now(), subject, title, description: description || "",
+                file: stored?.file || null, storageKey: stored?.storageKey || null,
+                originalFileName: req.file ? req.file.originalname : null,
                 createdAt: new Date().toISOString()
             };
 
@@ -294,13 +341,14 @@ app.post(
                 lesson
             });
         } catch (error) {
+            try { await discardUploadedFile(stored); } catch (cleanupError) { console.error("Upload cleanup failed"); }
             next(error);
         }
     }
 );
 
 // حذف درس
-app.delete("/api/lessons/:id", adminOnly, (req, res, next) => {
+app.delete("/api/lessons/:id", adminOnly, async (req, res, next) => {
     try {
         const id = Number(req.params.id);
         const lessons = readLessons();
@@ -318,14 +366,7 @@ app.delete("/api/lessons/:id", adminOnly, (req, res, next) => {
 
         saveLessons(updatedLessons);
 
-        if (lesson.file) {
-            const filename = path.basename(lesson.file);
-            const filePath = path.join(UPLOADS_DIR, filename);
-
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-            }
-        }
+        await removeUploadedFile(lesson);
 
         res.json({
             success: true,
@@ -334,31 +375,6 @@ app.delete("/api/lessons/:id", adminOnly, (req, res, next) => {
     } catch (error) {
         next(error);
     }
-});
-
-// التعامل مع أخطاء الملفات والطلبات
-app.use((err, req, res, next) => {
-    console.error(err);
-
-    if (res.headersSent) {
-        return next(err);
-    }
-
-    if (err instanceof multer.MulterError) {
-        return res.status(400).json({
-            message: err.code === "LIMIT_FILE_SIZE"
-                ? "حجم الملف أكبر من 50 ميغابايت"
-                : "تعذر رفع الملف"
-        });
-    }
-
-    res.status(500).json({
-        message: "حدث خطأ داخلي في الخادم"
-    });
-});
-
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Darb server running on port ${PORT}`);
 });
 
 // محتوى المواد: ملخصات وتمارين واختبارات وامتحانات وموارد
@@ -377,18 +393,18 @@ app.get("/api/content", (req, res, next) => {
     }
 });
 
-app.post("/api/content", adminOnly, upload.single("file"), (req, res, next) => {
+app.post("/api/content", adminOnly, upload.single("file"), async (req, res, next) => {
+    let stored = null;
     try {
         const { type, subject, title, description } = req.body;
         if (!CONTENT_TYPES.has(type) || !subject || !title) {
-            if (req.file) fs.unlinkSync(req.file.path);
             return res.status(400).json({ message: "اختر نوع المحتوى والمادة واكتب العنوان" });
         }
+        stored = await storeUploadedFile(req.file);
         const content = readContent();
         const item = {
-            id: Date.now(), type, subject, title,
-            description: description || "",
-            file: req.file ? "/uploads/" + req.file.filename : null,
+            id: Date.now(), type, subject, title, description: description || "",
+            file: stored?.file || null, storageKey: stored?.storageKey || null,
             originalFileName: req.file ? req.file.originalname : null,
             createdAt: new Date().toISOString()
         };
@@ -396,20 +412,37 @@ app.post("/api/content", adminOnly, upload.single("file"), (req, res, next) => {
         saveContent(content);
         res.status(201).json({ success: true, item });
     } catch (error) {
+        try { await discardUploadedFile(stored); } catch (cleanupError) { console.error("Upload cleanup failed"); }
         next(error);
     }
 });
 
-app.delete("/api/content/:id", adminOnly, (req, res, next) => {
+app.delete("/api/content/:id", adminOnly, async (req, res, next) => {
     try {
         const id = Number(req.params.id);
         const content = readContent();
         const item = content.find(entry => entry.id === id);
         if (!item) return res.status(404).json({ message: "المحتوى غير موجود" });
         saveContent(content.filter(entry => entry.id !== id));
-        removeUploadedFile(item);
+        await removeUploadedFile(item);
         res.json({ success: true, message: "تم حذف المحتوى" });
     } catch (error) {
         next(error);
     }
+});
+
+// Error middleware must be registered after every route.
+app.use((err, req, res, next) => {
+    console.error("Request failed:", err?.name || "Error");
+    if (res.headersSent) return next(err);
+    if (err instanceof multer.MulterError) {
+        return res.status(400).json({
+            message: err.code === "LIMIT_FILE_SIZE" ? "حجم الملف أكبر من 50 ميغابايت" : "تعذر رفع الملف"
+        });
+    }
+    res.status(500).json({ message: "حدث خطأ داخلي في الخادم" });
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Darb server running on port ${PORT}`);
 });
