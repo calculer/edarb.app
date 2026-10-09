@@ -45,7 +45,11 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(UPLOADS_DIR));
 app.get("/files", async (req, res, next) => {
     try {
-        const key = typeof req.query.key === "string" ? req.query.key : "";
+        let key = typeof req.query.key === "string" ? req.query.key : "";
+        // Older public pages call encodeURI() on this URL, which double-encodes %2F.
+        if (key.includes("%")) {
+            try { key = decodeURIComponent(key); } catch { return res.status(404).end(); }
+        }
         if (!SUPABASE_ENABLED || !key.startsWith("uploads/") || key.split("/").some(part => !part || part === "." || part === "..")) {
             return res.status(404).end();
         }
